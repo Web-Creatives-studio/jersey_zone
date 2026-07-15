@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource ecommerce {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model products {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  price       Float
+  category    String
+  colors      String[]
+  sizes       Json
+  images      Json
+  featured    Boolean  @default(false)
+  stock       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model orders {
+  id              String         @id @ecommerce.VarChar(255)
+  customerEmail   String         @ecommerce.VarChar(255)
+  customerName    String         @ecommerce.VarChar(255)
+  date            DateTime?      @default(now()) @ecommerce.Timestamptz(6)
+  status          orderStatus?   @default(Pending)
+  paymentStatus   paymentStatus? @default(Unpaid)
+  subtotal        Decimal        @ecommerce.Decimal(10, 2)
+  totalAmount     Decimal        @ecommerce.Decimal(10, 2)
+  items           Json
+  shippingAddress Json
+  createdAt       DateTime?      @default(now()) @ecommerce.Timestamptz(6)
+  updatedAt       DateTime?      @default(now()) @updatedAt @ecommerce.Timestamptz(6)
+  userId          String?        @ecommerce.VarChar(255)
+  discount        Decimal?       @ecommerce.Decimal(10, 2)
+  shipping        Decimal?       @ecommerce.Decimal(10, 2)
+  user            user?          @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "fk_order_user")
+}
+
+model carts {
+  id            String   @id @ecommerce.VarChar(30)
+  customerId    String   @ecommerce.VarChar(255)
+  productId     String   @ecommerce.VarChar(255)
+  name          String   @ecommerce.VarChar(255)
+  price         Float
+  quantity      Int      @default(1)
+  selectedColor String   @ecommerce.VarChar(50)
+  selectedSize  String   @ecommerce.VarChar(20)
+  images        String   @ecommerce.VarChar(500)
+  isOrdered     Boolean  @default(false)
+  createdAt     DateTime @default(now()) @ecommerce.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @ecommerce.Timestamptz(6)
+  customerName  String   @ecommerce.VarChar(30)
+
+  @@index([customerId])
+  @@index([isOrdered])
+  @@map("carts")
+}
+
+model user {
+  id        String    @id @ecommerce.VarChar(255)
+  name      String    @ecommerce.VarChar(255)
+  email     String    @unique @ecommerce.VarChar(255)
+  password  String    @ecommerce.VarChar(255)
+  createdAt DateTime? @default(now()) @ecommerce.Timestamptz(6)
+  updatedAt DateTime? @default(now()) @ecommerce.Timestamptz(6)
+  orders    orders[]
+}
+
+model notifications {
+  id          String   @id
+  type        String
+  title       String
+  description String
+  read        Boolean  @default(false)
+  badgeColor  String
+  createdAt   DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model messages {
+  id           String   @id @default(cuid()) @ecommerce.VarChar(30)
+  customerId   String   @ecommerce.VarChar(255)
+  sender       String   @ecommerce.VarChar(50)
+  text         String
+  createdAt    DateTime @default(now()) @ecommerce.Timestamptz(6)
+  read         Boolean  @default(false)
+  customerName String?  @default("Guest Buyer") @ecommerce.VarChar(255)
+
+  @@index([customerId])
+}
+
+model EmailAutomation {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  category     EmailCategory
+  subject      String
+  htmlContent  String
+  images       String[]      @default([])
+  isActive     Boolean       @default(true)
+  triggerType  TriggerType   @default(IMMEDIATE)
+  delayInHours Int           @default(0)
+  scheduledFor DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  EmailLog     EmailLog[]
+  Queue        EmailQueue[]
+}
+
+model EmailQueue {
+  id           String          @id @default(uuid())
+  automationId String
+  recipient    String
+  dynamicData  Json
+  processAfter DateTime
+  isProcessed  Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  automation   EmailAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([isProcessed, processAfter])
+}
+
+model EmailLog {
+  id           String          @id @default(uuid())
+  automationId String
+  recipient    String
+  status       String
+  sentAt       DateTime        @default(now())
+  automation   EmailAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+}
+
+enum EmailCategory {
+  WELCOME
+  TRANSACTIONAL
+  ABANDONMENT
+  MARKETING
+  SUPPORT
+}
+
+enum TriggerType {
+  IMMEDIATE
+  DELAYED
+  SCHEDULED
+}
+
+enum orderStatus {
+  Pending
+  Processing
+  Shipped
+  Delivered
+  Cancelled
+}
+
+enum paymentStatus {
+  Unpaid
+  Pending
+  Paid
+  Refunded
+}
+
+enum OrderStatus {
+  Pending
+  Processing
+  Shipped
+  Delivered
+  Cancelled
+}
+
+enum PaymentStatus {
+  Unpaid
+  Pending
+  Paid
+  Refunded
+}

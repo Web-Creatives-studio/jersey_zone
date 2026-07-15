@@ -1,0 +1,26 @@
+import ".././globals.css";
+import Footer from "../components/frontend/Footer";
+import Header from "../components/frontend/Header";
+import { ToastContainer } from "react-toastify";
+import UserChat from "../components/frontend/UserChat";
+
+export const metadata = {
+  title: "About Page",
+  description: "About jersey page",
+};
+
+export default function AboutLayout({ children }) {
+  return (
+    <>
+      <main>
+        <Header />
+        {children}
+        <Footer />
+
+        <ToastContainer position="bottom-right" />
+      </main>
+
+      <UserChat />
+    </>
+  );
+}
