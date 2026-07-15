@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import useSWR from "swr";
 import { BsFillChatFill } from "react-icons/bs";
 import { FiLoader } from "react-icons/fi";
@@ -10,14 +11,18 @@ import FooterInteract from "../../components/admin/FooterInteract";
 import CustomerActivity from "../../components/admin/CustomerActivity";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
+// Force dynamic execution for safe database/API query environments
+export const dynamic = "force-dynamic";
+
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
-export default function Customers() {
+// 1. Core Component carrying useSearchParams logic
+function CustomersContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
-  // 1. Unified Source of Truth directly from URL Parameter Matrix
+  // Unified Source of Truth directly from URL Parameter Matrix
   const page = Number(searchParams.get("page")) || 1;
   const urlCustomerId = searchParams.get("customerId") || "";
 
@@ -76,25 +81,25 @@ export default function Customers() {
     fetcher,
   );
 
-  // 2. Pure helper function to generate consistent tracking URL changes
-const createQueryString = (name, value) => {
-  const params = new URLSearchParams(searchParams.toString());
+  // Pure helper function to generate consistent tracking URL changes
+  const createQueryString = (name, value) => {
+    const params = new URLSearchParams(searchParams.toString());
 
-  if (value) {
-    params.set(name, String(value));
-  } else {
-    params.delete(name);
-  }
+    if (value) {
+      params.set(name, String(value));
+    } else {
+      params.delete(name);
+    }
 
-  // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
-  const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
-  
-  if (name !== "page" && !isSelectingItem) {
-    params.set("page", "1");
-  }
+    // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
+    const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
+    
+    if (name !== "page" && !isSelectingItem) {
+      params.set("page", "1");
+    }
 
-  return params.toString();
-};
+    return params.toString();
+  };
 
   const handleUrlParamChange = (name, value) => {
     const queryString = createQueryString(name, value);
@@ -193,14 +198,7 @@ const createQueryString = (name, value) => {
   };
 
   if (customersLoading) {
-    return (
-      <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
-        <FiLoader className="animate-spin text-[#111827]" size={28} />
-        <p className="text-xs font-bold uppercase tracking-widest">
-          Hydrating Customer Directory indices...
-        </p>
-      </div>
-    );
+    return <LoadingIndicator />;
   }
 
   return (
@@ -326,5 +324,26 @@ const createQueryString = (name, value) => {
         )}
       </div>
     </div>
+  );
+}
+
+// 2. Extracted Loading UI for clean Suspense fallback usage
+function LoadingIndicator() {
+  return (
+    <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
+      <FiLoader className="animate-spin text-[#111827]" size={28} />
+      <p className="text-xs font-bold uppercase tracking-widest">
+        Hydrating Customer Directory indices...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 3. Default Export wrapped inside Suspense to pass builds seamlessly
+export default function Customers() {
+  return (
+    <Suspense fallback={<LoadingIndicator />}>
+      <CustomersContent />
+    </Suspense>
   );
 }
