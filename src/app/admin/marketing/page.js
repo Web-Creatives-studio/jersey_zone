@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { FiPlus } from "react-icons/fi";
 import CreateMarket from "../../components/admin/CreateMarket";
 import AddProduct from "../../components/admin/AddProduct";
@@ -9,7 +9,10 @@ import FooterInteract from "../../components/admin/FooterInteract";
 import ShowMail from "../../components/admin/ShowMail";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
-export default function MarketingPage() {
+// Force dynamic execution for safe database/API query environments
+export const dynamic = "force-dynamic";
+
+function MarketingContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,24 +48,24 @@ export default function MarketingPage() {
   }, [createMarket]);
 
   // 2. Centralized URL generation handler parameters mapper
-const createQueryString = (name, value) => {
-  const params = new URLSearchParams(searchParams.toString());
+  const createQueryString = (name, value) => {
+    const params = new URLSearchParams(searchParams.toString());
 
-  if (value) {
-    params.set(name, String(value));
-  } else {
-    params.delete(name);
-  }
+    if (value) {
+      params.set(name, String(value));
+    } else {
+      params.delete(name);
+    }
 
-  // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
-  const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
-  
-  if (name !== "page" && !isSelectingItem) {
-    params.set("page", "1");
-  }
+    // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
+    const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
+    
+    if (name !== "page" && !isSelectingItem) {
+      params.set("page", "1");
+    }
 
-  return params.toString();
-};
+    return params.toString();
+  };
 
   const handleUrlParamChange = (name, value) => {
     const queryString = createQueryString(name, value);
@@ -116,7 +119,7 @@ const createQueryString = (name, value) => {
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
-                    handleUrlParamChange("page", 1); // Drop query parameters pagination to safe fallback
+                    handleUrlParamChange("page", 1);
                   }}
                   className="w-full sm:w-64 px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-orange-500 text-slate-700 bg-slate-50/50"
                 />
@@ -174,5 +177,26 @@ const createQueryString = (name, value) => {
       {addProduct && <AddProduct setAddProduct={setAddProduct} />}
       {createMarket && <CreateMarket setCreateMarket={setCreateMarket} />}
     </>
+  );
+}
+
+// 2. Loading Placeholder during Suspense fallback
+function LoadingPlaceholder() {
+  return (
+    <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+        Loading Marketing Systems...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 3. Default export wrapping the content in a Suspense boundary
+export default function MarketingPage() {
+  return (
+    <Suspense fallback={<LoadingPlaceholder />}>
+      <MarketingContent />
+    </Suspense>
   );
 }
