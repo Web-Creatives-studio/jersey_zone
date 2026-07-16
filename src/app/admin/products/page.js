@@ -1,15 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
 import useSWR, { useSWRConfig } from "swr"; // 👈 Imported SWR Hooks
 import { toast } from "react-toastify";
 import EditProduct from "../../components/admin/EditProduct";
 import DeleteProduct from "../../components/admin/DeletProduct";
 import ProductTable from "../../components/admin/ProductTable";
 import FooterInteract from "../../components/admin/FooterInteract";
+import { FiLoader } from "react-icons/fi";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { FaTrash } from "react-icons/fa";
+
+// Force dynamic execution for safe database/API query environments during build time
+export const dynamic = "force-dynamic";
 
 // 1. Simple, clean fetcher helper function
 const fetcher = async (url) => {
@@ -18,7 +22,7 @@ const fetcher = async (url) => {
   return res.json();
 };
 
-export default function ProductPage() {
+function ProductPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -166,13 +170,7 @@ export default function ProductPage() {
   }
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-        <p className="text-zinc-500 font-medium text-sm animate-pulse">
-          Loading real-time listings...
-        </p>
-      </div>
-    );
+    return <LoadingPlaceholder />;
   }
 
   return (
@@ -279,5 +277,26 @@ export default function ProductPage() {
         />
       )}
     </div>
+  );
+}
+
+// Extracted Loading View
+function LoadingPlaceholder() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 gap-3">
+      <FiLoader className="animate-spin text-orange-500" size={28} />
+      <p className="text-zinc-500 font-medium text-xs uppercase tracking-widest">
+        Loading real-time listings...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 Default entry export wrapped safely in Suspense
+export default function ProductPage() {
+  return (
+    <Suspense fallback={<LoadingPlaceholder />}>
+      <ProductPageContent />
+    </Suspense>
   );
 }

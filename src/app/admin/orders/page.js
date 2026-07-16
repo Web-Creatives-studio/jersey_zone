@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import useSWR from "swr";
 import { FiLoader } from "react-icons/fi";
 import ShowOrder from "../../components/admin/ShowOrder";
@@ -8,9 +8,12 @@ import OrderTable from "../../components/admin/OrderTable";
 import FooterInteract from "../../components/admin/FooterInteract";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
+// Force dynamic execution for safe database/API query environments
+export const dynamic = "force-dynamic";
+
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
-export default function Orders() {
+function OrdersContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -36,24 +39,24 @@ export default function Orders() {
   });
 
   // 2. Centralized, reusable method to generate parameter strings safely
-const createQueryString = (name, value) => {
-  const params = new URLSearchParams(searchParams.toString());
+  const createQueryString = (name, value) => {
+    const params = new URLSearchParams(searchParams.toString());
 
-  if (value) {
-    params.set(name, String(value));
-  } else {
-    params.delete(name);
-  }
+    if (value) {
+      params.set(name, String(value));
+    } else {
+      params.delete(name);
+    }
 
-  // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
-  const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
-  
-  if (name !== "page" && !isSelectingItem) {
-    params.set("page", "1");
-  }
+    // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
+    const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
+    
+    if (name !== "page" && !isSelectingItem) {
+      params.set("page", "1");
+    }
 
-  return params.toString();
-};
+    return params.toString();
+  };
 
   const handleUrlParamChange = (name, value) => {
     const queryString = createQueryString(name, value);
@@ -108,14 +111,7 @@ const createQueryString = (name, value) => {
     orders.find((o) => String(o.id) === String(selectedOrderId)) || currentOrdersSlice[0];
 
   if (isLoading) {
-    return (
-      <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
-        <FiLoader className="animate-spin text-[#111827]" size={28} />
-        <p className="text-xs font-bold uppercase tracking-widest">
-          Establishing live sync feed...
-        </p>
-      </div>
-    );
+    return <LoadingPlaceholder />;
   }
 
   return (
@@ -209,5 +205,26 @@ const createQueryString = (name, value) => {
         )}
       </div>
     </div>
+  );
+}
+
+// 2. Extracted Loading Placeholder
+function LoadingPlaceholder() {
+  return (
+    <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
+      <FiLoader className="animate-spin text-[#111827]" size={28} />
+      <p className="text-xs font-bold uppercase tracking-widest">
+        Establishing live sync feed...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 3. Default export wrapped in Suspense boundary to protect Vercel production build compilation
+export default function Orders() {
+  return (
+    <Suspense fallback={<LoadingPlaceholder />}>
+      <OrdersContent />
+    </Suspense>
   );
 }
