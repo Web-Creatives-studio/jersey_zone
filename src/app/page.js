@@ -5,7 +5,8 @@ import Featured from "./components/frontend/Featured";
 import Showcase from "./components/frontend/ShowCase";
 import CarouselCard from "./components/frontend/CarouselCard";
 import { FiLoader } from "react-icons/fi";
-
+import Header from "./components/frontend/Header";
+import Footer from "./components/frontend/Footer";
 // Force request-time serverless page compilation
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,10 @@ export const metadata = {
 };
 
 export default function HomePage() {
+
   return (
     <div>
+      <Header/>
       {/* Static/Pure-presentational components render cleanly */}
       <Hero />
       <Featured />
@@ -29,12 +32,14 @@ export default function HomePage() {
         </Suspense>
       </div>
       
-      {/* 🌟 Carousel Slider subset protected by a Suspense boundary */}
+      {/*Carousel Slider subset protected by a Suspense boundary */}
       <div className="max-w-7xl mx-auto px-4 py-10">
         <Suspense fallback={<ComponentLoader label="Synchronizing product lists..." />}>
           <CarouselCard params="home" />
         </Suspense>
       </div>
+
+      <Footer/>
     </div>
   );
 }

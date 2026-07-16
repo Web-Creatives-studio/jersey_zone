@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-// Create the Context object
 const AuthContext = createContext({
   user: null,
   loading: true,
@@ -12,7 +11,6 @@ const AuthContext = createContext({
   refreshSession: () => {},
 });
 
-// The Provider Component that wraps your app
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,11 +18,9 @@ export const AuthProvider = ({ children }) => {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Define the verification logic once
   const verifySession = useCallback(async () => {
     try {
-      setLoading(true);
-      // Fetch to your secure session endpoint (cookies are automatically attached)
+      // 🌟 Don't force loading state on silent updates to prevent UI blinking
       const res = await fetch("/api/auth/me");
 
       if (!res.ok) {
@@ -32,11 +28,11 @@ export const AuthProvider = ({ children }) => {
       }
 
       const data = await res.json();
-      setUser(data.user); // Populate global user state
+      setUser(data.user); 
       setError(null);
     } catch (err) {
       console.error("Global session verification failure:", err.message);
-      setUser(null); // Ensure user is logged out globally
+      setUser(null); 
       setError(err.message);
     } finally {
       setLoading(false);
@@ -48,9 +44,19 @@ export const AuthProvider = ({ children }) => {
     verifySession();
   }, [verifySession]);
 
-  // 2. Optional: Re-verify when navigating to sensitive routes (e.g., checkout, admin)
+  // 2. 🌟 EVENT LISTENER TRIGGER: Watch for internal broadcast messages to reload the session instantly
   useEffect(() => {
-    const protectedRoutes = ["/checkout", "/carts"];
+    const handleSyncTrigger = () => {
+      verifySession();
+    };
+
+    window.addEventListener("auth-session-sync", handleSyncTrigger);
+    return () => window.removeEventListener("auth-session-sync", handleSyncTrigger);
+  }, [verifySession]);
+
+  // 3. Re-verify when navigating to sensitive routes
+  useEffect(() => {
+    const protectedRoutes = ["/checkout", "/carts", "/orders", "/profile"];
     if (protectedRoutes.some(route => pathname.startsWith(route))) {
       verifySession();
     }
@@ -58,25 +64,26 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await fetch("/api/auth/signout", { method: "POST" });
+      setLoading(true);
+      await fetch("/api/auth/logout", { method: "POST" });
       setUser(null);
-      router.push("/auth?message=logged_out");
+      router.push("/auth?mode=signin&message=logged_out");
     } catch (err) {
       console.error("Logout failed:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // The context value exposed to consumers
   const value = {
     user,
     loading,
     error,
     logout,
-    refreshSession: verifySession, // Allow manual refresh (e.g., after login)
+    refreshSession: verifySession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook for easy consumption in components
 export const useAuth = () => useContext(AuthContext);

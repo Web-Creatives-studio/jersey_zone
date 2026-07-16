@@ -1,6 +1,6 @@
 import ".././globals.css";
 import Footer from "../components/frontend/Footer";
-import Header from "../components/frontend/Header"
+import Header from "../components/frontend/Header";
 import { ToastContainer } from "react-toastify";
 import UserChat from "../components/frontend/UserChat";
 
@@ -11,19 +11,16 @@ export const metadata = {
 
 export default function HomeLayout({ children }) {
   return (
-     <>
-  
-
+    <>
       <main>
-            <Header />
+        <Header />
         {children}
-           <Footer />
+        <Footer />
 
-      <ToastContainer position="bottom-right" />
+        <ToastContainer position="bottom-right" />
       </main>
 
-   
-          <UserChat />
+      <UserChat />
     </>
   );
 }

@@ -1,12 +1,9 @@
-import { Analytics } from '@vercel/analytics/react'; // 🌟 THE FIX: Changed from /next to /react
- 
-function MyApp({ Component, pageProps }) {
+import React from 'react'
+
+export default function page() {
   return (
-    <>
-      <Component {...pageProps} />
-      <Analytics />
-    </>
-  );
+    <div>
+      Analytics
+    </div>
+  )
 }
- 
-export default MyApp;

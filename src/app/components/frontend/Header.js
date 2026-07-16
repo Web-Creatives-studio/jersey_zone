@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import React, { useState } from "react";
-import { usePathname } from "next/navigation";
+import React, { useState , useEffect} from "react";
+import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import useCartStore from "../../stores/useCartStore";
-import { useAuth } from "../../contexts/AuthContext"; // 👈 Imported Auth Context
+import { useAuth } from "../../contexts/AuthContext";
 import {
   FaSearch,
   FaPhoneAlt,
@@ -13,7 +13,8 @@ import {
   FaUser,
   FaBars,
   FaTimes,
-  FaBell
+  FaBell,
+  FaSignInAlt,
 } from "react-icons/fa";
 import LogoutButton from "./LogoutButton";
 
@@ -22,26 +23,38 @@ const fetcher = (url) => fetch(url).then((res) => res.json());
 export default function Header() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const {cart} = useCartStore()
+  const { cart } = useCartStore();
+  const router = useRouter();
 
   // 1. Get current authenticated user details from global context
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
 
   // 2. Real-Time Unread Notification Streaming (Only fetches if user is logged in)
   const { data: notifications = [] } = useSWR(
     user?.id ? `/api/notifications?customerId=${user.id}` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: 5000 },
   );
 
-  // 3. Real-Time Carts Cache Streaming (Only fetches if user is logged in)
-  const { data: carts = [] } = useSWR(
-    user?.id ?`/api/carts?customerId=${user?.id}&isOrdered=true` : null,
-    fetcher,
-    { refreshInterval: 5000 }
-  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !document.body) return;
 
-  // 4. Calculate counters dynamically
+    if (open) {
+      document.body.classList.add("overflow-hidden");
+    } else {
+      document.body.classList.remove("overflow-hidden");
+    }
+
+    // Clean up event fallback if the component unmounts unexpectedly while menu is active
+    return () => {
+      document.body.classList.remove("overflow-hidden");
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+  // 3. Calculate counters dynamically
   const unreadNotificationsCount = Array.isArray(notifications)
     ? notifications.filter((n) => !n.read).length
     : 0;
@@ -58,13 +71,23 @@ export default function Header() {
     { name: "Contact", link: "/contact" },
     { name: "Orders", link: "/orders" },
   ];
+  
+  const guestLinks = [
+    { name: "Home", link: "/home" },
+    { name: "Shop", link: "/products" },
+    { name: "About", link: "/about" },
+    { name: "Blog", link: "/blog" },
+    { name: "Contact", link: "/contact" },
+  ];
+
+  // Pick target link array context dynamically based on authentication layout variables
+  const activeMobileLinks = user === null ? guestLinks : navLinks;
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 text-zinc-900">
       {/* ================= TOP BAR ================= */}
       <div className="bg-[#111827] text-white">
         <div className="max-w-7xl mx-auto h-16 lg:h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-          
           {/* Desktop Search Bar */}
           <div className="hidden lg:flex items-center w-64 rounded-xl bg-white/10 overflow-hidden border border-white/10 focus-within:border-orange-500 transition-all">
             <input
@@ -72,13 +95,19 @@ export default function Header() {
               placeholder="Search jerseys..."
               className="flex-1 bg-transparent px-4 py-2.5 outline-none text-xs text-white placeholder:text-gray-400"
             />
-            <button type="button" className="px-4 py-2.5 hover:bg-white/10 text-gray-300 transition cursor-pointer">
+            <button
+              type="button"
+              className="px-4 py-2.5 hover:bg-white/10 text-gray-300 transition cursor-pointer"
+            >
               <FaSearch size={12} />
             </button>
           </div>
 
           {/* Core Brand Identity Logo */}
-          <Link href="/home" className="text-xl sm:text-2xl lg:text-3xl font-black italic tracking-wider hover:opacity-90 transition">
+          <Link
+            href="/home"
+            className="text-xl sm:text-2xl lg:text-3xl font-black italic tracking-wider hover:opacity-90 transition"
+          >
             <span>JERSEY</span>
             <span className="text-orange-500">ZONE</span>
           </Link>
@@ -119,13 +148,13 @@ export default function Header() {
       <div className="bg-white hidden lg:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14">
-            
             {/* Primary Page Link Elements */}
             <nav className="flex items-center gap-8">
-              {navLinks.map((item) => {
-                const isActive = item.link === "/home" 
-                  ? pathname === "/home" 
-                  : pathname.startsWith(item.link);
+              {(user === null ? guestLinks : navLinks).map((item) => {
+                const isActive =
+                  item.link === "/home"
+                    ? pathname === "/home"
+                    : pathname.startsWith(item.link);
 
                 return (
                   <Link
@@ -145,46 +174,80 @@ export default function Header() {
 
             {/* Utility Action Buttons Panel */}
             <div className="flex items-center gap-2">
-              <Link href="/profile" title="My Account Profile">
-                <button type="button" className="cursor-pointer h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition">
-                  <FaUser size={14} />
-                </button>
-              </Link>
+              {user !== null && (
+                <div className="flex items-center gap-2">
+                  <Link href="/profile" title="My Account Profile">
+                    <button
+                      type="button"
+                      className="cursor-pointer h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition"
+                    >
+                      <FaUser size={14} />
+                    </button>
+                  </Link>
 
-              <Link href="/carts" className="relative" title="Shopping Cart Layout">
-                <button type="button" className="relative h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition cursor-pointer">
-                  <FaShoppingCart size={15} />
-                  {cartCount > 0 && (
-                    <span className="absolute top-1 right-1 bg-orange-500 text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center">
-                      {cartCount}
-                    </span>
-                  )}
-                </button>
-              </Link>
+                  <Link
+                    href="/carts"
+                    className="relative"
+                    title="Shopping Cart Layout"
+                  >
+                    <button
+                      type="button"
+                      className="relative h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition cursor-pointer"
+                    >
+                      <FaShoppingCart size={15} />
+                      {cartCount > 0 && (
+                        <span className="absolute top-1 right-1 bg-orange-500 text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center">
+                          {cartCount}
+                        </span>
+                      )}
+                    </button>
+                  </Link>
 
-              <Link href="/notifications" className="relative" title="Notifications Hub">
-                <button type="button" className="relative h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition cursor-pointer">
-                  <FaBell size={15} />
-                  {unreadNotificationsCount > 0 && (
-                    <span className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center animate-pulse">
-                      {unreadNotificationsCount}
-                    </span>
-                  )}
-                </button>
-              </Link>
+                  <Link
+                    href="/notifications"
+                    className="relative"
+                    title="Notifications Hub"
+                  >
+                    <button
+                      type="button"
+                      className="relative h-9 w-9 rounded-xl flex items-center justify-center hover:bg-orange-50 text-zinc-700 hover:text-orange-500 transition cursor-pointer"
+                    >
+                      <FaBell size={15} />
+                      {unreadNotificationsCount > 0 && (
+                        <span className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center animate-pulse">
+                          {unreadNotificationsCount}
+                        </span>
+                      )}
+                    </button>
+                  </Link>
+                </div>
+              )}
 
-              <div className="pl-2 border-l border-gray-200 ml-1">
-                <LogoutButton />
-              </div>
+              {user === null ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/auth")}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 active:bg-red-100 border border-transparent hover:border-red-200 transition-all rounded-xl cursor-pointer outline-none"
+                  title="Securely Sign In"
+                >
+                  <FaSignInAlt size={16} />
+                  <span>SignIn</span>
+                </button>
+              ) : (
+                <div className="pl-2 border-l border-gray-200 ml-1">
+                  <LogoutButton />
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* ================= RESPONSIVE MOBILE MENU INTERFACE OVERLAY ================= */}
-      <div className={`lg:hidden overflow-hidden transition-all duration-300 ease-in-out bg-white ${open ? "max-h-screen opacity-100 border-b" : "max-h-0 opacity-0"}`}>
+      <div
+        className={`lg:hidden overflow-hidden transition-all absolute w-full duration-300 ease-in-out bg-white ${open ? "max-h-screen z-50 opacity-100 border-b" : "max-h-0 opacity-0"}`}
+      >
         <div className="px-4 py-5 space-y-5 shadow-inner">
-          
           {/* Mobile Search Input */}
           <div className="flex items-center rounded-xl bg-gray-100 overflow-hidden border border-transparent focus-within:bg-white focus-within:border-orange-500 transition-all">
             <input
@@ -199,7 +262,7 @@ export default function Header() {
 
           {/* Mobile Page Navigation Links */}
           <nav className="flex flex-col font-medium text-sm">
-            {navLinks.map((item) => {
+            {activeMobileLinks.map((item) => {
               const isActive = pathname === item.link;
               return (
                 <Link
@@ -211,7 +274,9 @@ export default function Header() {
                   }`}
                 >
                   <span>{item.name}</span>
-                  {isActive && <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />}
+                  {isActive && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                  )}
                 </Link>
               );
             })}
@@ -219,24 +284,51 @@ export default function Header() {
 
           {/* Mobile Footer Utility Quick Access Group Grid */}
           <div className="pt-2 grid grid-cols-2 gap-4 text-xs font-bold">
-            <Link href="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition">
-              <FaUser size={14} />
-              <span>Profile Hub</span>
-            </Link>
+            {user !== null ? (
+              <>
+                <Link
+                  href="/profile"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition"
+                >
+                  <FaUser size={14} />
+                  <span>Profile Hub</span>
+                </Link>
 
-            <Link href="/carts" onClick={() => setOpen(false)} className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition relative">
-              <FaShoppingCart size={14} />
-              <span>Cart ({cartCount})</span>
-            </Link>
+                <Link
+                  href="/carts"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition relative"
+                >
+                  <FaShoppingCart size={14} />
+                  <span>Cart ({cartCount})</span>
+                </Link>
 
-            <Link href="/notifications" onClick={() => setOpen(false)} className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition relative">
-              <FaBell size={14} />
-              <span>Alerts ({unreadNotificationsCount})</span>
-            </Link>
+                <Link
+                  href="/notifications"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition relative"
+                >
+                  <FaBell size={14} />
+                  <span>Alerts ({unreadNotificationsCount})</span>
+                </Link>
 
-            <div className="flex items-center justify-center p-2 rounded-xl bg-red-50 text-red-600">
-              <LogoutButton />
-            </div>
+                <div className="flex items-center justify-center p-2 rounded-xl bg-red-50 text-red-600">
+                  <LogoutButton />
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  router.push("/auth");
+                }}
+                className="col-span-2 w-full flex items-center justify-center gap-2 bg-[#111827] text-white p-3.5 rounded-xl transition"
+              >
+                <FaSignInAlt size={14} /> Sign In to Account
+              </button>
+            )}
           </div>
         </div>
       </div>
