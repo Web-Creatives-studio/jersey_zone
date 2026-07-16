@@ -20,19 +20,46 @@ export default function CartItems({ onSelectionChange }) {
 
   const [selectedItems, setSelectedItems] = useState({});
 
-  // Select all unpurchased jerseys inside the cart store list by default
+  // 🌟 THE FIX: Hydrate check states from localStorage cache when coming back from later steps
   useEffect(() => {
     if (cart.length > 0) {
-      const initialSelection = {};
-      cart.forEach((item) => {
-        const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
-        initialSelection[uniqueKey] = true;
+      setSelectedItems((prev) => {
+        const updatedSelection = { ...prev };
+        
+        // Check if there is an active batch already saved in checkout cache
+        let cachedBatchIds = null;
+        const savedBatchString = localStorage.getItem("pending_checkout_items");
+        
+        if (savedBatchString) {
+          try {
+            const parsed = JSON.parse(savedBatchString);
+            const arrayBatch = Array.isArray(parsed) ? parsed : [parsed];
+            cachedBatchIds = new Set(arrayBatch.map((item) => `${item.id}-${item.selectedColor}-${item.selectedSize}`));
+          } catch (e) {
+            console.error("Failed to parse cached checkout batch parameters:", e);
+          }
+        }
+
+        cart.forEach((item) => {
+          const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
+          
+          // Only evaluate if this item key doesn't have a state set yet
+          if (updatedSelection[uniqueKey] === undefined) {
+            if (cachedBatchIds !== null) {
+              // If we have a cache history, match selection from what was saved
+              updatedSelection[uniqueKey] = cachedBatchIds.has(uniqueKey);
+            } else {
+              // If it's a first-time load with no cache, default to true
+              updatedSelection[uniqueKey] = true;
+            }
+          }
+        });
+        return updatedSelection;
       });
-      setSelectedItems(initialSelection);
     }
   }, [cart]);
 
-  // Bubble up checked selections to the parent page layout wrapper grid
+  // Bubble up checked selections to the parent page layout wrapper grid safely
   useEffect(() => {
     const selectedList = cart.filter((item) => {
       const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
@@ -44,13 +71,23 @@ export default function CartItems({ onSelectionChange }) {
   }, [selectedItems, cart, onSelectionChange]);
 
   const toggleSelection = (uniqueKey) => {
-    setSelectedItems((prev) => ({
-      ...prev,
-      [uniqueKey]: !prev[uniqueKey],
-    }));
-  };
+    setSelectedItems((prev) => {
+      const updated = {
+        ...prev,
+        [uniqueKey]: !prev[uniqueKey],
+      };
 
-  
+      // 🌟 SIDE FIX: Sync localStorage immediately when toggling items on Step 1
+      // This keeps Step 2 and Step 3 price calculators completely in sync if they look at cache
+      const selectedList = cart.filter((item) => {
+        const key = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
+        return key === uniqueKey ? !prev[uniqueKey] : !!prev[key];
+      });
+      localStorage.setItem("pending_checkout_items", JSON.stringify(selectedList));
+      
+      return updated;
+    });
+  };
 
   return (
     <div className="space-y-4 text-zinc-900">
@@ -80,7 +117,7 @@ export default function CartItems({ onSelectionChange }) {
               <div className="flex gap-4 w-full">
                 <div className="relative w-24 h-24 rounded-xl bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
                   <Image
-                    src={item.image || item.images || "/placeholder.jpeg"} // 👈 FIXED: Resolves flat string images accurately
+                    src={item.image || item.images || "/placeholder.jpeg"}
                     alt={item.name}
                     fill
                     className="object-contain"

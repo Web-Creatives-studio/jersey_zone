@@ -17,7 +17,7 @@ export default async function ProductsPage({ searchParams }) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
-      {/* 🌟 Protected by Suspense layout boundary to support query sorting transitions cleanly */}
+      {/* Protected by Suspense layout boundary to support query sorting transitions cleanly */}
       <Suspense fallback={<CatalogLoadingPlaceholder />}>
         <ProductsList params="products" category={category} />
       </Suspense>

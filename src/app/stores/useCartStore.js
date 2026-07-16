@@ -164,11 +164,20 @@ const useCartStore = create((set, get) => ({
   },
 
   // F. PURGE SELECTED
+// 🌟 THE FIX: Bulletproof extraction of row IDs
   removeSelectedFromCart: async (customerId, selectedItemsList) => {
     if (!customerId || !selectedItemsList || selectedItemsList.length === 0) return;
 
-    const selectedIds = selectedItemsList.map((item) => item.id);
+    // Safely pull out the string ID whether it's a flat string array, 
+    // an array of objects { id }, or an array of full cart objects.
+    const selectedIds = selectedItemsList.map((item) => {
+      if (typeof item === "string") return item;
+      return item.id || item.productId;
+    }).filter(Boolean);
 
+    if (selectedIds.length === 0) return;
+
+    // Update local client state instantly (keeps unselected items safely in your cart)
     set((state) => ({
       cart: state.cart.filter((item) => !selectedIds.includes(item.id)),
     }));
@@ -177,7 +186,7 @@ const useCartStore = create((set, get) => ({
       await fetch("/api/carts/remove-selected", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId, selectedIds }),
+        body: JSON.stringify({ customerId, selectedIds }), // Pass clean string array
       });
     } catch (error) {
       console.error("Failed to sync selected cart removals:", error);

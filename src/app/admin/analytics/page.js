@@ -1,9 +1,12 @@
-import React from 'react'
-
-export default function AnalyticsPage() {
+import { Analytics } from '@vercel/analytics/next';
+ 
+function MyApp({ Component, pageProps }) {
   return (
-    <div>
-      Analytics
-    </div>
-  )
+    <>
+      <Component {...pageProps} />
+      <Analytics />
+    </>
+  );
 }
+ 
+export default MyApp;

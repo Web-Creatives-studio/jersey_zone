@@ -30,7 +30,7 @@ const paymentMethods = [
 export default function ShoppingPayment({ user, setStep }) {
   const router = useRouter();
   const [selectedMethod, setSelectedMethod] = useState("paystack");
-  const { cart,   removeSelectedFromCart } = useCartStore();
+  const { cart, removeSelectedFromCart } = useCartStore();
   const [checkoutItem, setCheckoutItem] = useState(null);
 
   const [storedShipping, setStoredShipping] = useState({
@@ -44,26 +44,27 @@ export default function ShoppingPayment({ user, setStep }) {
   });
 
   useEffect(() => {
-    // 1. Recover the dynamic shipping credentials stored by Step 1
     try {
       const localForm = localStorage.getItem("Shopping Form");
       if (localForm) setStoredShipping(JSON.parse(localForm));
       
-      const pendingCheckout = localStorage.getItem("pending_checkout");
-      if (pendingCheckout) setCheckoutItem(JSON.parse(pendingCheckout));
+      const pendingCheckout = localStorage.getItem("pending_checkout_items");
+      if (pendingCheckout) {
+        setCheckoutItem(JSON.parse(pendingCheckout));
+      }
     } catch (error) {
       console.error("Failed to parse local transaction parameters:", error);
     }
   }, []);
 
-  // 2. Select between dynamic single product buy-now state or global cart storage state
-  const activeItems = checkoutItem ? [checkoutItem] : cart;
+  // Compute active checkout targets (Single buy-now vs multi-item batch selection array)
+  const activeItems = Array.isArray(checkoutItem) 
+    ? checkoutItem 
+    : checkoutItem 
+      ? [checkoutItem] 
+      : cart;
 
-  const subtotal = activeItems.reduce(
-    (acc, item) => acc + item.price * item.quantity,
-    0,
-  );
-
+  const subtotal = activeItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const shipping = activeItems.length === 0 ? 0 : subtotal >= 100 ? 0 : 10;
   const discount = subtotal * 0.1;
   const total = subtotal + shipping - discount;
@@ -74,6 +75,25 @@ export default function ShoppingPayment({ user, setStep }) {
       return;
     }
 
+    // 🌟 THE FIX: Get the exact rows chosen on Step 1 directly from localStorage
+    let purchasedCartRowIds = [];
+    const savedBatchString = localStorage.getItem("pending_checkout_items");
+    
+    if (savedBatchString) {
+      try {
+        const parsedBatch = JSON.parse(savedBatchString);
+        const batchArray = Array.isArray(parsedBatch) ? parsedBatch : [parsedBatch];
+        purchasedCartRowIds = batchArray.map((item) => item.id);
+      } catch (e) {
+        console.error("Failed parsing fallback tracking IDs:", e);
+      }
+    }
+
+    // Fallback security check: if localStorage was empty, use only the current activeItems state mapping
+    if (purchasedCartRowIds.length === 0) {
+      purchasedCartRowIds = activeItems.map((item) => item.id);
+    }
+
     const formattedItems = activeItems.map((item) => ({
       product_id: item.productId || item.id, 
       name: item.name,
@@ -81,7 +101,7 @@ export default function ShoppingPayment({ user, setStep }) {
       selected_color: item.selectedColor,
       selected_size: item.selectedSize,
       price: parseFloat(item.price),
-      image: item.images || "/placeholder.jpeg", // 👈 Securely passes clean database-friendly string
+      image: item.images || item.image || "/placeholder.jpeg",
     }));
 
     const orderPayload = {
@@ -133,7 +153,7 @@ export default function ShoppingPayment({ user, setStep }) {
           });
 
           if (orderCreated) {
-            cleanCompletedCheckoutState();
+            cleanCompletedCheckoutState(purchasedCartRowIds);
           }
         },
         onClose: () => {
@@ -155,18 +175,16 @@ export default function ShoppingPayment({ user, setStep }) {
       });
 
       if (orderCreated) {
-        cleanCompletedCheckoutState();
+        cleanCompletedCheckoutState(purchasedCartRowIds);
       }
     }
   };
 
-// Locate this function inside your ShoppingPayment.jsx component:
-
-  const cleanCompletedCheckoutState = () => {
-    // 🌟 THE FIX: Remove only checked-out selections from cart instead of bulk clearing
-    if (!checkoutItem) {
-      // Pass the customerId and the active selected item arrays
-      removeSelectedFromCart(user?.id, cart);
+  const cleanCompletedCheckoutState = (purchasedCartRowIds) => {
+    if (purchasedCartRowIds && purchasedCartRowIds.length > 0) {
+      // Map row IDs straight into an object array shape matching Zustand's state criteria
+      const itemsToPurge = purchasedCartRowIds.map(id => ({ id }));
+      removeSelectedFromCart(user?.id, itemsToPurge);
     }
     
     localStorage.removeItem("pending_checkout_items");
@@ -269,7 +287,6 @@ export default function ShoppingPayment({ user, setStep }) {
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
-          {/* Back button safely toggles Step counter state wrapper rather than popping page location rules */}
           <button
             type="button"
             onClick={() => setStep(1)}

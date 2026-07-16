@@ -1,29 +1,32 @@
 import { NextResponse } from "next/server";
-import { prisma } from "../../../lib/prisma";
+import { prisma } from "../../../lib/prisma"; // Adjust path to match your layout
+
+export const dynamic = "force-dynamic";
 
 export async function DELETE(req) {
   try {
     const { customerId, selectedIds } = await req.json();
 
-    if (!customerId || !selectedIds || !Array.isArray(selectedIds)) {
+    // Guard rails check: make sure we have active strings to run against
+    if (!customerId || !selectedIds || !Array.isArray(selectedIds) || selectedIds.length === 0) {
       return NextResponse.json(
         { message: "Missing required selection parameters" },
         { status: 400 }
       );
     }
 
-    // Delete only the specific cart rows that the user had checked
+    // Delete ONLY rows whose unique primary key string matches the explicit array
     await prisma.carts.deleteMany({
       where: {
-        customerId,
+        customerId: customerId,
         id: {
-          in: selectedIds,
+          in: selectedIds, // [ "cart-id-1", "cart-id-2" ]
         },
-        isOrdered: false, // Ensure we don't accidentally drop completed orders history
+        isOrdered: false, // Double guard layer
       },
     });
 
-    return NextResponse.json({ message: "Selected items successfully purged from database cart" });
+    return NextResponse.json({ message: "Selected rows successfully purged from your database cart." });
   } catch (error) {
     console.error("Error purging selected items from database cart:", error);
     return NextResponse.json(

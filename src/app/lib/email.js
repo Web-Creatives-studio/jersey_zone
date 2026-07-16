@@ -1,10 +1,4 @@
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-
 export async function sendEmail({ to, subject, html, images = [] }) {
-  // Append images cleanly at the bottom of the content if any exist
   let enrichedHtml = html;
   if (images.length > 0) {
     const imageTags = images.map(img => `<img src="${img}" alt="Attached Asset" style="max-width:100%; margin-top:10px; border-radius:8px;" />`).join('');
@@ -12,7 +6,8 @@ export async function sendEmail({ to, subject, html, images = [] }) {
   }
 
   return await resend.emails.send({
-    from: 'Marketing Hub <noreply@yourdomain.com>', // Verified domain in Resend dashboard
+    // 🌟 THE FREE FIX: Use Resend's free default sandbox testing email address
+    from: 'Marketing Hub <onboarding@resend.dev>', 
     to,
     subject,
     html: enrichedHtml,
