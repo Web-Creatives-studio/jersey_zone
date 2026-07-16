@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { toast } from "react-toastify";
 import { FaUserPlus, FaSignInAlt, FaTshirt } from "react-icons/fa";
+import { FiLoader } from "react-icons/fi";
 
-export default function AuthPage() {
+// Force dynamic request-time rendering
+export const dynamic = "force-dynamic";
+
+function AuthPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -25,7 +29,6 @@ export default function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Points exactly to your newly merged secure login route endpoint
       const response = await fetch("/api/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -35,7 +38,6 @@ export default function AuthPage() {
 
       if (!response.ok) throw new Error(data.message || "Authentication failed");
 
-      // 🔒 REMOVED LOCALSTORAGE: Session token is handled completely inside secure HttpOnly cookies now
       toast.success("Welcome back! Redirecting...");
       router.push("/home");
     } catch (err) {
@@ -248,5 +250,26 @@ export default function AuthPage() {
 
       </div>
     </div>
+  );
+}
+
+// Extracted Auth Loading Fallback View
+function AuthLoading() {
+  return (
+    <div className="min-h-screen bg-[#0b0f17] flex flex-col items-center justify-center gap-3 text-slate-400">
+      <FiLoader className="animate-spin text-orange-500" size={32} />
+      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+        Securing connection channel...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 Default entry export wrapped safely in Suspense
+export default function AuthPage() {
+  return (
+    <Suspense fallback={<AuthLoading />}>
+      <AuthPageContent />
+    </Suspense>
   );
 }

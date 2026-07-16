@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import CartDetails from "../components/frontend/CartDetails";
 import CartItems from "../components/frontend/CartItems";
 import ShoppingForm from "../components/frontend/ShoppingForm";
@@ -10,19 +10,22 @@ import useCartStore from "../stores/useCartStore";
 import { useAuth } from "../contexts/AuthContext";
 import { FiLoader } from "react-icons/fi";
 
+// Force dynamic request-time compilation on the serverless platform
+export const dynamic = "force-dynamic";
+
 const steps = [
   { id: 1, title: "Shopping Cart" },
   { id: 2, title: "Shopping Address" },
   { id: 3, title: "Payment" },
 ];
 
-export default function Carts() {
+function CartsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
   const { user, loading } = useAuth();
   const fetchUserCart = useCartStore((state) => state.fetchUserCart);
-  const { cart,   removeSelectedFromCart } = useCartStore();
+  const { cart } = useCartStore();
 
   const [selectedCartBatch, setSelectedCartBatch] = useState([]);
   const [shoppingForm, setShoppingForm] = useState(null); 
@@ -41,7 +44,7 @@ export default function Carts() {
     }
   }, [user, loading, router]);
 
-  // 🌟 FIX: Automatically hydrate the selection state array if the user reloads on step 2 or 3
+  // 🌟 Hydrate the selection state array if the user reloads on step 2 or 3
   useEffect(() => {
     if (activeStep > 1) {
       const savedBatch = localStorage.getItem("pending_checkout_items");
@@ -71,14 +74,7 @@ export default function Carts() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-2 bg-zinc-50 text-zinc-500">
-        <FiLoader className="animate-spin text-orange-500" size={24} />
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-          Verifying secure session...
-        </p>
-      </div>
-    );
+    return <CheckoutLoadingPlaceholder />;
   }
 
   return (
@@ -185,7 +181,6 @@ export default function Carts() {
           {/* ================= RIGHT COLUMN: STICKY LIVE CALCULATOR ================= */}
           <div className="lg:col-span-5 lg:sticky lg:top-24">
             <div className="bg-white rounded-3xl border border-gray-100 shadow-xl p-2">
-              {/* 🌟 FIXED: Consistently relies on selectedCartBatch state fields across all steps */}
               <CartDetails
                 cartItems={selectedCartBatch}
                 router={router}
@@ -197,5 +192,26 @@ export default function Carts() {
         </div>
       </div>
     </section>
+  );
+}
+
+// Extracted Loading View
+function CheckoutLoadingPlaceholder() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-2 bg-zinc-50 text-zinc-500">
+      <FiLoader className="animate-spin text-orange-500" size={24} />
+      <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+        Verifying secure session...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 Default export wrapped within a Suspense boundary to guarantee clean deployments
+export default function Carts() {
+  return (
+    <Suspense fallback={<CheckoutLoadingPlaceholder />}>
+      <CartsContent />
+    </Suspense>
   );
 }

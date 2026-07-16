@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { FiLoader, FiCheck, FiMapPin, FiCreditCard, FiAlertTriangle, FiShoppingBag as FiCartIcon } from "react-icons/fi";
 import { useAuth } from "../contexts/AuthContext";
@@ -9,7 +9,10 @@ import ShoppingPayment from "../components/frontend/ShoppingPayment";
 import Image from "next/image";
 import { toast } from "react-toastify";
 
-export default function CheckOutPage() {
+// Force request-time serverless route execution
+export const dynamic = "force-dynamic";
+
+function CheckoutPageContent() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { cart, addToCart } = useCartStore();
@@ -30,12 +33,11 @@ export default function CheckOutPage() {
     country: "Nigeria",
   });
 
-  // 1. Capture dynamic document referrer path context only on mount frame execution
+  // 1. Capture dynamic document referrer path context safely on mount
   useEffect(() => {
     if (typeof window !== "undefined" && document.referrer) {
       try {
         const referrerUrl = new URL(document.referrer);
-        // Exclude cross-origin logins or blank validation loops
         if (referrerUrl.origin === window.location.origin && referrerUrl.pathname !== "/checkout") {
           setReferrerPath(referrerUrl.pathname + referrerUrl.search);
         }
@@ -48,7 +50,6 @@ export default function CheckOutPage() {
     if (pendingItem) {
       try {
         const parsed = JSON.parse(pendingItem);
-        // Ensure checkoutItem is stored as a single object if parsed as an array
         setCheckoutItem(Array.isArray(parsed) ? parsed[0] : parsed);
       } catch (e) {
         console.error("Failed to parse pending_checkout data", e);
@@ -56,7 +57,7 @@ export default function CheckOutPage() {
     }
   }, []);
 
-  // Hydrate form inputs
+  // Hydrate form inputs safely
   useEffect(() => {
     const savedForm = localStorage.getItem("Shopping Form");
     if (savedForm) {
@@ -82,8 +83,10 @@ export default function CheckOutPage() {
     }
   }, [user, loading, router]);
 
-  // SECURE ROUTE INTERCEPTOR: Hooks browser popstate buttons natively
+  // 🌟 SECURE ROUTE INTERCEPTOR: Guarded with Window Type Verification Checks for Builds
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     window.history.pushState(null, null, window.location.pathname);
 
     const handlePopStateIntercept = (event) => {
@@ -141,7 +144,6 @@ export default function CheckOutPage() {
     router.push(referrerPath); 
   };
 
-  // Turn active checkout target cleanly into an array list for mapping
   const activeItems = checkoutItem ? [checkoutItem] : cart;
 
   const subtotal = activeItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -150,14 +152,7 @@ export default function CheckOutPage() {
   const total = subtotal + shipping - discount;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-2 bg-zinc-50">
-        <FiLoader className="animate-spin text-orange-500" size={24} />
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-          Verifying secure session...
-        </p>
-      </div>
-    );
+    return <CheckoutLoadingOverlay />;
   }
 
   return (
@@ -170,7 +165,7 @@ export default function CheckOutPage() {
             type="button"
             className="text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-zinc-900 transition flex items-center gap-2 cursor-pointer bg-transparent border-0 outline-none"
           >
-            ← Cancel Checkout
+            &larr; Cancel Checkout
           </button>
           <div className="text-xs font-bold uppercase tracking-widest text-orange-500 flex items-center gap-1.5">
             <FiCreditCard /> Secure Checkout Workspace
@@ -328,7 +323,6 @@ export default function CheckOutPage() {
 
               <div className="divide-y divide-gray-100 max-h-[240px] overflow-y-auto pr-2 py-2">
                 {activeItems.map((item) => {
-                  // Resolve fallback for flat images string formats correctly
                   const imageSrc = item.images || item.image || "/placeholder.jpeg";
 
                   return (
@@ -425,5 +419,26 @@ export default function CheckOutPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Extracted Loading Placeholder View
+function CheckoutLoadingOverlay() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-2 bg-zinc-50">
+      <FiLoader className="animate-spin text-orange-500" size={24} />
+      <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+        Verifying secure session...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 Default Export wrapped cleanly in a Suspense boundary
+export default function CheckOutPage() {
+  return (
+    <Suspense fallback={<CheckoutLoadingOverlay />}>
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

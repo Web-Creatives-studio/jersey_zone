@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, Suspense } from "react";
 import useSWR from "swr";
 import {
   FiBox,
@@ -14,9 +14,12 @@ import {
 import OrdersCard from "../components/frontend/OrdersCard";
 import { useAuth } from "../contexts/AuthContext";
 
+// Force request-time serverless route compilation
+export const dynamic = "force-dynamic";
+
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
-export default function BuyerOrdersPage() {
+function BuyerOrdersContent() {
   // 1. Destructure user and loading context values straight from your secure global state
   const { user, loading: authLoading } = useAuth();
   
@@ -65,14 +68,7 @@ export default function BuyerOrdersPage() {
 
   // Show secure loader while checking session or pulling background transactions
   if (authLoading || (dataLoading && !orders.length)) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-500">
-        <FiLoader className="animate-spin text-orange-500" size={28} />
-        <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-          Loading Order Records...
-        </p>
-      </div>
-    );
+    return <OrderLoadingPlaceholder />;
   }
 
   return (
@@ -234,5 +230,26 @@ export default function BuyerOrdersPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Extracted Loading Placeholder View
+function OrderLoadingPlaceholder() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-500">
+      <FiLoader className="animate-spin text-orange-500" size={28} />
+      <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+        Loading Order Records...
+      </p>
+    </div>
+  );
+}
+
+// 🌟 Default export wrapped within a Suspense layout boundary to support successful deployments
+export default function BuyerOrdersPage() {
+  return (
+    <Suspense fallback={<OrderLoadingPlaceholder />}>
+      <BuyerOrdersContent />
+    </Suspense>
   );
 }
