@@ -245,7 +245,7 @@ function OrderLoadingPlaceholder() {
   );
 }
 
-// 🌟 Default export wrapped within a Suspense layout boundary to support successful deployments
+// Default export wrapped within a Suspense layout boundary to support successful deployments
 export default function BuyerOrdersPage() {
   return (
     <Suspense fallback={<OrderLoadingPlaceholder />}>

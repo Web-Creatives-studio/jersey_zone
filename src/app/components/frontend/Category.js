@@ -1,5 +1,6 @@
 "use client";
 
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 const categories = [
@@ -13,7 +14,7 @@ const categories = [
   { name: "Retro Jerseys", slug: "retro" },
 ];
 
-export default function Category() {
+function CategoryContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -21,7 +22,8 @@ export default function Category() {
   const selectedCategory = searchParams.get("category") || "all";
 
   const handleCategory = (category) => {
-    const params = new URLSearchParams(searchParams);
+    // Create new URLSearchParams instance from current params string
+    const params = new URLSearchParams(searchParams.toString());
 
     if (category === "all") {
       params.delete("category");
@@ -29,14 +31,14 @@ export default function Category() {
       params.set("category", category);
     }
 
-    router.push(`${pathname}?${params.toString()}`, {
-      scroll: false,
-    });
+    const queryString = params.toString();
+    const targetUrl = queryString ? `${pathname}?${queryString}` : pathname;
+
+    router.push(targetUrl, { scroll: false });
   };
 
   return (
     <section className="relative w-full py-2">
-
       {/* Left Fade */}
       <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-8 bg-gradient-to-r from-white to-transparent" />
 
@@ -63,6 +65,7 @@ export default function Category() {
           return (
             <button
               key={category.slug}
+              type="button"
               onClick={() => handleCategory(category.slug)}
               className={`
                 snap-start
@@ -71,19 +74,21 @@ export default function Category() {
                 rounded-full
                 border
                 px-5
-                py-3
+                py-2.5
                 sm:px-6
                 sm:py-3
-                text-sm
-                sm:text-base
-                font-semibold
+                text-xs
+                sm:text-sm
+                font-bold
                 transition-all
                 duration-300
                 active:scale-95
+                cursor-pointer
+                outline-none
 
                 ${
                   active
-                    ? "bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-200"
+                    ? "bg-orange-500 border-orange-500 text-white shadow-md shadow-orange-500/20"
                     : "bg-white border-gray-200 text-gray-700 hover:border-orange-400 hover:bg-orange-50 hover:text-orange-600"
                 }
               `}
@@ -94,5 +99,26 @@ export default function Category() {
         })}
       </div>
     </section>
+  );
+}
+
+function CategoryFallback() {
+  return (
+    <div className="w-full py-4 flex items-center gap-3 overflow-x-auto">
+      {[...Array(6)].map((_, i) => (
+        <div
+          key={i}
+          className="h-10 w-28 rounded-full bg-gray-100 animate-pulse shrink-0"
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function Category() {
+  return (
+    <Suspense fallback={<CategoryFallback />}>
+      <CategoryContent />
+    </Suspense>
   );
 }

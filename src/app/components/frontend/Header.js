@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useState , useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import useCartStore from "../../stores/useCartStore";
@@ -31,7 +31,7 @@ export default function Header() {
 
   // 2. Real-Time Unread Notification Streaming (Only fetches if user is logged in)
   const { data: notifications = [] } = useSWR(
-    user?.id ? `/api/notifications?customerId=${user.id}` : null,
+    user?.id ? `/api/notifications/user?userId=${user.id}` : null,
     fetcher,
     { refreshInterval: 5000 },
   );
@@ -56,7 +56,7 @@ export default function Header() {
   }, [pathname]);
   // 3. Calculate counters dynamically
   const unreadNotificationsCount = Array.isArray(notifications)
-    ? notifications.filter((n) => !n.read).length
+    ? notifications.filter((n) => n.isRead === false || n.read === false).length
     : 0;
 
   const cartCount = Array.isArray(cart)
@@ -65,18 +65,20 @@ export default function Header() {
 
   const navLinks = [
     { name: "Home", link: "/home" },
-    { name: "Shop", link: "/products" },
     { name: "About", link: "/about" },
-    { name: "Blog", link: "/blog" },
+    { name: "Shop", link: "/products" },
+
+    //{ name: "Blog", link: "/blog" },
     { name: "Contact", link: "/contact" },
     { name: "Orders", link: "/orders" },
   ];
-  
+
   const guestLinks = [
     { name: "Home", link: "/home" },
-    { name: "Shop", link: "/products" },
     { name: "About", link: "/about" },
-    { name: "Blog", link: "/blog" },
+    { name: "Shop", link: "/products" },
+
+    //{ name: "Blog", link: "/blog" },
     { name: "Contact", link: "/contact" },
   ];
 

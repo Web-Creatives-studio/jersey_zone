@@ -83,6 +83,23 @@ model notifications {
   @@map("notifications")
 }
 
+model userNotifications {
+  id        String   @id @default(uuid()) @ecommerce.VarChar(36)
+  userId    String   @ecommerce.VarChar(255)
+  title     String   @ecommerce.VarChar(255)
+  message   String   @ecommerce.VarChar(500)
+  type      String   @default("info") @ecommerce.VarChar(50) // "order", "promo", "system"
+  link      String?  @ecommerce.VarChar(255) // e.g. "/orders"
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now()) @ecommerce.Timestamptz(6)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("userNotifications")
+}
+
+
+
 model messages {
   id           String   @id @default(cuid()) @ecommerce.VarChar(30)
   customerId   String   @ecommerce.VarChar(255)

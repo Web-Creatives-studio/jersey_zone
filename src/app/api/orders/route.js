@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../lib/prisma";
 
-const prisma = new PrismaClient();
+export const dynamic = "force-dynamic";
 
 // ==========================================
 // GET: Fetch Orders (Smart Admin vs Buyer Router)
@@ -42,7 +42,7 @@ export async function GET(request) {
 }
 
 // ==========================================
-// POST: Place New Order (Handles atomic inventory deduction and marks cart items ordered)
+// POST: Place New Order (Handles atomic inventory deduction and marks purchased items ordered)
 // ==========================================
 export async function POST(request) {
   try {
@@ -66,95 +66,123 @@ export async function POST(request) {
       return NextResponse.json({ message: "Missing required checkout parameters" }, { status: 400 });
     }
 
-    const transactionResult = await prisma.$transaction(async (tx) => {
-      
-      // 1. Loop through items and perform stock checks & atomic modifications
-      for (const item of items) {
-        const normalizedColor = item.selected_color.toLowerCase().trim();
-        
-        const targetProduct = await tx.products.findUnique({
-          where: { id: item.product_id },
-          select: { sizes: true, name: true }
-        });
+    const transactionResult = await prisma.$transaction(
+      async (tx) => {
+        // 🌟 1. Extract explicit cart primary key IDs sent from frontend
+        const purchasedCartIds = items
+          .map((item) => item.cart_id || item.cartId || item.id)
+          .filter((cartId) => typeof cartId === "string" && cartId.trim().length > 0);
 
-        if (!targetProduct) {
-          throw new Error(`Product ${item.name} could not be found.`);
-        }
-
-        const currentSizesObj = typeof targetProduct.sizes === "string" 
-          ? JSON.parse(targetProduct.sizes) 
-          : (targetProduct.sizes || {});
+        // 2. Loop through items and perform stock checks & atomic modifications
+        for (const item of items) {
+          const productId = item.product_id || item.productId;
+          const normalizedColor = item.selected_color?.toLowerCase().trim();
           
-        const variantAvailableStock = currentSizesObj[normalizedColor]?.[item.selected_size] || 0;
+          const targetProduct = await tx.products.findUnique({
+            where: { id: productId },
+            select: { sizes: true, name: true }
+          });
 
-        if (variantAvailableStock < item.quantity) {
-          throw new Error(`Insufficient stock for ${targetProduct.name} (${item.selected_color} - ${item.selected_size}). Available: ${variantAvailableStock}`);
+          if (!targetProduct) {
+            throw new Error(`Product ${item.name} could not be found.`);
+          }
+
+          const currentSizesObj = typeof targetProduct.sizes === "string" 
+            ? JSON.parse(targetProduct.sizes) 
+            : (targetProduct.sizes || {});
+            
+          const variantAvailableStock = currentSizesObj[normalizedColor]?.[item.selected_size] || 0;
+
+          if (variantAvailableStock < item.quantity) {
+            throw new Error(`Insufficient stock for ${targetProduct.name} (${item.selected_color} - ${item.selected_size}). Available: ${variantAvailableStock}`);
+          }
+
+          // Atomic update on products table
+          await tx.$executeRaw`
+            UPDATE "products"
+            SET sizes = jsonb_set(
+              sizes, 
+              array[${normalizedColor}, ${item.selected_size}], 
+              to_jsonb(coalesce((sizes->${normalizedColor}->>${item.selected_size})::int, 0) - ${parseInt(item.quantity)})
+            )
+            WHERE id = ${productId};
+          `;
+
+          // Recalculate global rolling counters
+          const reFetchedProduct = await tx.products.findUnique({
+            where: { id: productId },
+            select: { sizes: true }
+          });
+
+          const refreshedSizesMap = typeof reFetchedProduct.sizes === "string" 
+            ? JSON.parse(reFetchedProduct.sizes) 
+            : (reFetchedProduct.sizes || {});
+          
+          const recalculatedGlobalStockCount = Object.values(refreshedSizesMap).reduce((totalSum, sizeSubMap) => {
+            return totalSum + Object.values(sizeSubMap).reduce((subSum, stockQty) => subSum + Math.max(0, Number(stockQty)), 0);
+          }, 0);
+
+          await tx.products.update({
+            where: { id: productId },
+            data: { stock: recalculatedGlobalStockCount }
+          });
         }
 
-        // 2. Perform Option 2: Atomic update on your exact "products" table name
-        await tx.$executeRaw`
-          UPDATE "products"
-          SET sizes = jsonb_set(
-            sizes, 
-            array[${normalizedColor}, ${item.selected_size}], 
-            to_jsonb(coalesce((sizes->${normalizedColor}->>${item.selected_size})::int, 0) - ${parseInt(item.quantity)})
-          )
-          WHERE id = ${item.product_id};
-        `;
+        // 🌟 3. Target ONLY the explicitly selected cart primary key IDs
+        if (userId && purchasedCartIds.length > 0) {
+          await tx.carts.updateMany({
+            where: {
+              customerId: userId,
+              id: { in: purchasedCartIds }, // 👈 STRICT PRIMARY KEY FILTER HERE
+              isOrdered: false,
+            },
+            data: {
+              isOrdered: true,
+            },
+          });
+        }
 
-        // 3. Recalculate global rolling counters
-        const reFetchedProduct = await tx.products.findUnique({
-          where: { id: item.product_id },
-          select: { sizes: true }
-        });
-
-        const refreshedSizesMap = typeof reFetchedProduct.sizes === "string" 
-          ? JSON.parse(reFetchedProduct.sizes) 
-          : (reFetchedProduct.sizes || {});
-        
-        const recalculatedGlobalStockCount = Object.values(refreshedSizesMap).reduce((totalSum, sizeSubMap) => {
-          return totalSum + Object.values(sizeSubMap).reduce((subSum, stockQty) => subSum + Math.max(0, Number(stockQty)), 0);
-        }, 0);
-
-        await tx.products.update({
-          where: { id: item.product_id },
-          data: { stock: recalculatedGlobalStockCount }
-        });
-      }
-
-      // 🌟 Step 3.5: If userId is present, set isOrdered to true for all active cart records
-      if (userId) {
-        await tx.carts.updateMany({
-          where: {
-            customerId: userId,
-            isOrdered: false, // Target only uncompleted purchases
-          },
+        // 4. Create order document
+        const createdOrder = await tx.orders.create({
           data: {
-            isOrdered: true, // Switch values safely within the secure database loop
+            id,
+            userId: userId || null, 
+            customerEmail,
+            customerName,
+            subtotal: parseFloat(subtotal),
+            totalAmount: parseFloat(totalAmount),
+            discount: parseFloat(discount),
+            shipping: parseFloat(shipping),
+            items: items,             
+            shippingAddress: shippingAddress, 
+            status: status || "Pending",
+            paymentStatus: paymentStatus || "Unpaid",
           },
         });
+
+        // 5. Create automatic order confirmation notification
+        if (userId) {
+          await tx.userNotifications.create({
+            data: {
+              userId,
+              title: "Order Placed Successfully! 🛒",
+              message: `Your order #${id} for ${items.length} item(s) has been received and is currently being processed.`,
+              type: "order",
+              link: "/orders",
+            },
+          });
+        }
+        
+
+        return createdOrder;
+      },
+
+      
+      {
+        maxWait: 5000, 
+        timeout: 15000,
       }
-
-      // 4. Create your order document
-      const createdOrder = await tx.orders.create({
-        data: {
-          id,
-          userId: userId || null, 
-          customerEmail,
-          customerName,
-          subtotal: parseFloat(subtotal),
-          totalAmount: parseFloat(totalAmount),
-          discount: parseFloat(discount),
-          shipping: parseFloat(shipping),
-          items: items,             
-          shippingAddress: shippingAddress, 
-          status: status || "Pending",
-          paymentStatus: paymentStatus || "Unpaid",
-        },
-      });
-
-      return createdOrder;
-    });
+    );
 
     return NextResponse.json({ message: "Order placed successfully", order: transactionResult }, { status: 201 });
   } catch (error) {
@@ -181,7 +209,7 @@ export async function PUT(request) {
         ...(status && { status }),
         ...(paymentStatus && { paymentStatus }),
         ...(shippingAddress && { shippingAddress: typeof shippingAddress === "string" ? shippingAddress : JSON.stringify(shippingAddress) }), 
-        ...(items && { items: typeof items === "string" ? items : JSON.stringify(items) }),                                    
+        ...(items && { items: typeof items === "string" ? items : JSON.stringify(items) }),                                         
       },
     });
 

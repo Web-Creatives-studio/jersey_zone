@@ -47,7 +47,7 @@ export default function ShoppingPayment({ user, setStep }) {
     try {
       const localForm = localStorage.getItem("Shopping Form");
       if (localForm) setStoredShipping(JSON.parse(localForm));
-      
+
       const pendingCheckout = localStorage.getItem("pending_checkout_items");
       if (pendingCheckout) {
         setCheckoutItem(JSON.parse(pendingCheckout));
@@ -58,13 +58,16 @@ export default function ShoppingPayment({ user, setStep }) {
   }, []);
 
   // Compute active checkout targets (Single buy-now vs multi-item batch selection array)
-  const activeItems = Array.isArray(checkoutItem) 
-    ? checkoutItem 
-    : checkoutItem 
-      ? [checkoutItem] 
+  const activeItems = Array.isArray(checkoutItem)
+    ? checkoutItem
+    : checkoutItem
+      ? [checkoutItem]
       : cart;
 
-  const subtotal = activeItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const subtotal = activeItems.reduce(
+    (acc, item) => acc + item.price * item.quantity,
+    0,
+  );
   const shipping = activeItems.length === 0 ? 0 : subtotal >= 100 ? 0 : 10;
   const discount = subtotal * 0.1;
   const total = subtotal + shipping - discount;
@@ -78,11 +81,13 @@ export default function ShoppingPayment({ user, setStep }) {
     // 🌟 THE FIX: Get the exact rows chosen on Step 1 directly from localStorage
     let purchasedCartRowIds = [];
     const savedBatchString = localStorage.getItem("pending_checkout_items");
-    
+
     if (savedBatchString) {
       try {
         const parsedBatch = JSON.parse(savedBatchString);
-        const batchArray = Array.isArray(parsedBatch) ? parsedBatch : [parsedBatch];
+        const batchArray = Array.isArray(parsedBatch)
+          ? parsedBatch
+          : [parsedBatch];
         purchasedCartRowIds = batchArray.map((item) => item.id);
       } catch (e) {
         console.error("Failed parsing fallback tracking IDs:", e);
@@ -94,8 +99,10 @@ export default function ShoppingPayment({ user, setStep }) {
       purchasedCartRowIds = activeItems.map((item) => item.id);
     }
 
+    // 🌟 Make sure we include cart_id explicitly in the payload
     const formattedItems = activeItems.map((item) => ({
-      product_id: item.productId || item.id, 
+      cart_id: item.id, // 👈 THE FIX: Pass the primary key of the cart row
+      product_id: item.productId,
       name: item.name,
       quantity: item.quantity,
       selected_color: item.selectedColor,
@@ -107,7 +114,10 @@ export default function ShoppingPayment({ user, setStep }) {
     const orderPayload = {
       id: `ORD-${Math.floor(100000 + Math.random() * 900000)}`,
       customerEmail: storedShipping?.email || user?.email || "guest@email.com",
-      customerName: `${storedShipping?.firstName || ""} ${storedShipping?.lastName || ""}`.trim() || user?.name || "Guest Buyer",
+      customerName:
+        `${storedShipping?.firstName || ""} ${storedShipping?.lastName || ""}`.trim() ||
+        user?.name ||
+        "Guest Buyer",
       subtotal: subtotal,
       discount: discount,
       shipping: shipping,
@@ -121,47 +131,77 @@ export default function ShoppingPayment({ user, setStep }) {
       },
     };
 
-    if (selectedMethod === "paystack") {
-      if (!window.PaystackPop) {
-        toast.error("Paystack SDK failed to load. Please refresh and try again.");
+  if (selectedMethod === "paystack") {
+      const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+
+      if (!publicKey) {
+        toast.error("Paystack Key missing! Check NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY in .env.local");
+        if (typeof setIsProcessing === "function") setIsProcessing(false);
         return;
       }
 
-      const handler = window.PaystackPop.setup({
-        key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
-        email: orderPayload.customerEmail,
-        amount: Math.round(orderPayload.totalAmount * 100), 
-        currency: "NGN",
-        metadata: {
-          custom_fields: [
-            {
-              display_name: "Order ID",
-              variable_name: "order_id",
-              value: orderPayload.id,
-            },
-          ],
-        },
-        callback: async (reference) => {
-          toast.success("Payment secured via Paystack!");
+      // 1. Amount Guard: Ensure total is a valid number greater than 0
+      const calculatedAmountInKobo = Math.round(Number(total) * 100);
+      if (isNaN(calculatedAmountInKobo) || calculatedAmountInKobo <= 0) {
+        toast.error("Invalid order total amount.");
+        if (typeof setIsProcessing === "function") setIsProcessing(false);
+        return;
+      }
 
-          const orderCreated = await createDatabaseOrder({
-            ...orderPayload,
-            status: "Processing",
-            paymentStatus: "Paid",
-            userId: user?.id || null, 
-            paymentReference: reference.reference,
-          });
+      // 2. SDK Check
+      if (typeof window === "undefined" || !window.PaystackPop) {
+        toast.error("Paystack SDK loading... Please wait 2 seconds and try again.");
+        if (typeof setIsProcessing === "function") setIsProcessing(false);
+        return;
+      }
 
-          if (orderCreated) {
-            cleanCompletedCheckoutState(purchasedCartRowIds);
-          }
-        },
-        onClose: () => {
-          toast.error("Transaction cancelled by user.");
-        },
-      });
+      try {
+        // Direct handler call
+        const paystack = window.PaystackPop.setup({
+          key: publicKey,
+          email: orderPayload.customerEmail || "customer@email.com",
+          amount: calculatedAmountInKobo,
+          currency: "NGN",
+          ref: orderPayload.id + "_" + Math.floor(Math.random() * 1000),
+          metadata: {
+            custom_fields: [
+              {
+                display_name: "Order ID",
+                variable_name: "order_id",
+                value: orderPayload.id,
+              },
+            ],
+          },
+          callback: function (response) {
+            toast.success("Payment secured via Paystack!");
+            
+            createDatabaseOrder({
+              ...orderPayload,
+              status: "Processing",
+              paymentStatus: "Paid",
+              userId: user?.id || null,
+              paymentReference: response.reference || response.trxref,
+            }).then((orderCreated) => {
+              if (orderCreated) {
+                cleanCompletedCheckoutState(purchasedCartRowIds);
+              } else {
+                if (typeof setIsProcessing === "function") setIsProcessing(false);
+              }
+            });
+          },
+          onClose: function () {
+            toast.info("Transaction cancelled.");
+            if (typeof setIsProcessing === "function") setIsProcessing(false);
+          },
+        });
 
-      handler.openIframe();
+        // Launch modal iframe
+        paystack.openIframe();
+      } catch (err) {
+        console.error("Paystack Inline JS Error Log:", err);
+        toast.error("Paystack launch failed: " + (err?.message || "Check browser console"));
+        if (typeof setIsProcessing === "function") setIsProcessing(false);
+      }
     }
 
     if (selectedMethod === "cash") {
@@ -171,7 +211,7 @@ export default function ShoppingPayment({ user, setStep }) {
         ...orderPayload,
         status: "Pending",
         paymentStatus: "Unpaid",
-        userId: user?.id || null, 
+        userId: user?.id || null,
       });
 
       if (orderCreated) {
@@ -181,12 +221,16 @@ export default function ShoppingPayment({ user, setStep }) {
   };
 
   const cleanCompletedCheckoutState = (purchasedCartRowIds) => {
-    if (purchasedCartRowIds && purchasedCartRowIds.length > 0) {
-      // Map row IDs straight into an object array shape matching Zustand's state criteria
-      const itemsToPurge = purchasedCartRowIds.map(id => ({ id }));
-      removeSelectedFromCart(user?.id, itemsToPurge);
+    // Collect primary key IDs directly from active items if not passed in
+    const targetIds =
+      purchasedCartRowIds && purchasedCartRowIds.length > 0
+        ? purchasedCartRowIds
+        : activeItems.map((item) => item.id).filter(Boolean);
+
+    if (targetIds.length > 0 && user?.id) {
+      removeSelectedFromCart(user.id, targetIds);
     }
-    
+
     localStorage.removeItem("pending_checkout_items");
     localStorage.removeItem("Shopping Form");
     router.push("/orders", { scroll: false });
@@ -203,7 +247,9 @@ export default function ShoppingPayment({ user, setStep }) {
       const responseData = await response.json();
 
       if (!response.ok) {
-        toast.error(responseData.message || "Failed to process order stock limitations.");
+        toast.error(
+          responseData.message || "Failed to process order stock limitations.",
+        );
         return false;
       }
       return true;
@@ -222,9 +268,12 @@ export default function ShoppingPayment({ user, setStep }) {
       />
       <div className="space-y-6 text-zinc-900">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-zinc-950">Payment Method</h2>
+          <h2 className="text-xl font-bold tracking-tight text-zinc-950">
+            Payment Method
+          </h2>
           <p className="text-gray-500 text-xs mt-1">
-            Select your preferred payment option to complete your transaction securely.
+            Select your preferred payment option to complete your transaction
+            securely.
           </p>
         </div>
 
@@ -246,7 +295,9 @@ export default function ShoppingPayment({ user, setStep }) {
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div
                     className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${
-                      active ? "bg-orange-500 text-white" : "bg-gray-50 text-gray-600"
+                      active
+                        ? "bg-orange-500 text-white"
+                        : "bg-gray-50 text-gray-600"
                     }`}
                   >
                     {method.icon}
@@ -267,7 +318,9 @@ export default function ShoppingPayment({ user, setStep }) {
                     active ? "border-orange-500" : "border-gray-300"
                   }`}
                 >
-                  {active && <div className="w-2 h-2 rounded-full bg-orange-500" />}
+                  {active && (
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                  )}
                 </div>
               </button>
             );
@@ -278,9 +331,12 @@ export default function ShoppingPayment({ user, setStep }) {
           <div className="flex gap-2.5 items-start">
             <FaLock className="text-orange-500 mt-0.5 shrink-0" size={14} />
             <div>
-              <h4 className="font-bold text-xs text-zinc-900">Secure Checkout Encryption</h4>
+              <h4 className="font-bold text-xs text-zinc-900">
+                Secure Checkout Encryption
+              </h4>
               <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                Your payment data is securely processed with end-to-end encryption via encrypted channels.
+                Your payment data is securely processed with end-to-end
+                encryption via encrypted channels.
               </p>
             </div>
           </div>
@@ -300,7 +356,9 @@ export default function ShoppingPayment({ user, setStep }) {
             onClick={handlePayment}
             className="w-full sm:flex-1 bg-orange-500 hover:bg-orange-600 transition rounded-xl py-3 text-white font-bold text-xs uppercase tracking-widest text-center shadow-md cursor-pointer border-none outline-none"
           >
-            {selectedMethod === "paystack" ? "Proceed to Paystack" : "Confirm & Place Order"}
+            {selectedMethod === "paystack"
+              ? "Proceed to Paystack"
+              : "Confirm & Place Order"}
           </button>
         </div>
       </div>

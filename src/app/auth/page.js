@@ -44,7 +44,7 @@ const handleSignInSubmit = async (e) => {
 
       toast.success("Welcome back! Redirecting...");
       
-      // 🌟 THE REAL-TIME FIX: Signal the AuthContext to instantly re-verify the session cookie
+      // THE REAL-TIME FIX: Signal the AuthContext to instantly re-verify the session cookie
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("auth-session-sync"));
       }

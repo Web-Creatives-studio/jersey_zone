@@ -20,93 +20,118 @@ export default function CartItems({ onSelectionChange }) {
 
   const [selectedItems, setSelectedItems] = useState({});
 
-  // 🌟 THE FIX: Hydrate check states from localStorage cache when coming back from later steps
+  // 1. Hydrate checkbox state strictly using database primary key `id`
   useEffect(() => {
     if (cart.length > 0) {
       setSelectedItems((prev) => {
         const updatedSelection = { ...prev };
-        
-        // Check if there is an active batch already saved in checkout cache
-        let cachedBatchIds = null;
+
+        let cachedIds = null;
         const savedBatchString = localStorage.getItem("pending_checkout_items");
-        
+
         if (savedBatchString) {
           try {
             const parsed = JSON.parse(savedBatchString);
             const arrayBatch = Array.isArray(parsed) ? parsed : [parsed];
-            cachedBatchIds = new Set(arrayBatch.map((item) => `${item.id}-${item.selectedColor}-${item.selectedSize}`));
+            // 🌟 STRICT PK MATCH: Extract string `id` directly
+            cachedIds = new Set(arrayBatch.map((item) => (typeof item === "string" ? item : item.id)).filter(Boolean));
           } catch (e) {
-            console.error("Failed to parse cached checkout batch parameters:", e);
+            console.error("Error parsing cached checkout selections:", e);
           }
         }
 
         cart.forEach((item) => {
-          const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
-          
-          // Only evaluate if this item key doesn't have a state set yet
-          if (updatedSelection[uniqueKey] === undefined) {
-            if (cachedBatchIds !== null) {
-              // If we have a cache history, match selection from what was saved
-              updatedSelection[uniqueKey] = cachedBatchIds.has(uniqueKey);
+          const rowId = item.id;
+
+          if (updatedSelection[rowId] === undefined) {
+            if (cachedIds !== null) {
+              updatedSelection[rowId] = cachedIds.has(rowId);
             } else {
-              // If it's a first-time load with no cache, default to true
-              updatedSelection[uniqueKey] = true;
+              // Default to true on initial load with no cache
+              updatedSelection[rowId] = true;
             }
           }
         });
+
         return updatedSelection;
       });
     }
   }, [cart]);
 
-  // Bubble up checked selections to the parent page layout wrapper grid safely
+  // 2. Filter checked list and store in local cache using primary key `id`
   useEffect(() => {
-    const selectedList = cart.filter((item) => {
-      const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
-      return !!selectedItems[uniqueKey];
-    });
+    const selectedList = cart.filter((item) => !!selectedItems[item.id]);
+
+    localStorage.setItem("pending_checkout_items", JSON.stringify(selectedList));
+
     if (onSelectionChange) {
       onSelectionChange(selectedList);
     }
   }, [selectedItems, cart, onSelectionChange]);
 
-  const toggleSelection = (uniqueKey) => {
-    setSelectedItems((prev) => {
-      const updated = {
-        ...prev,
-        [uniqueKey]: !prev[uniqueKey],
-      };
+  // Toggle individual item checkbox by row `id`
+  const toggleSelection = (id) => {
+    setSelectedItems((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
-      // 🌟 SIDE FIX: Sync localStorage immediately when toggling items on Step 1
-      // This keeps Step 2 and Step 3 price calculators completely in sync if they look at cache
-      const selectedList = cart.filter((item) => {
-        const key = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
-        return key === uniqueKey ? !prev[uniqueKey] : !!prev[key];
-      });
-      localStorage.setItem("pending_checkout_items", JSON.stringify(selectedList));
-      
-      return updated;
+  // Toggle "Select All" / "Deselect All"
+  const allSelected =
+    cart.length > 0 && cart.every((item) => !!selectedItems[item.id]);
+
+  const toggleSelectAll = () => {
+    const nextState = !allSelected;
+    const updated = {};
+    cart.forEach((item) => {
+      updated[item.id] = nextState;
     });
+    setSelectedItems(updated);
   };
 
   return (
     <div className="space-y-4 text-zinc-900">
+      {/* ================= BATCH CONTROL HEADER BAR ================= */}
+      {cart.length > 0 && (
+        <div className="flex items-center justify-between bg-gray-50 p-3.5 rounded-xl border border-gray-100">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2.5 text-xs font-bold text-zinc-700 hover:text-orange-500 transition cursor-pointer bg-transparent border-none outline-none"
+          >
+            <div
+              className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                allSelected ? "bg-orange-500 border-orange-500 text-white" : "border-gray-300 bg-white"
+              }`}
+            >
+              {allSelected && <FaCheck size={7} />}
+            </div>
+            <span>{allSelected ? "Deselect All Items" : "Select All Items"}</span>
+          </button>
+
+          <span className="text-[11px] font-semibold text-gray-400">
+            {cart.filter((item) => !!selectedItems[item.id]).length} of {cart.length} checked
+          </span>
+        </div>
+      )}
+
+      {/* ================= INDIVIDUAL CART ITEMS FEED ================= */}
       {cart.map((item) => {
-        const uniqueKey = `${item.id}-${item.selectedColor}-${item.selectedSize}`;
-        const isChecked = !!selectedItems[uniqueKey];
+        const isChecked = !!selectedItems[item.id];
 
         return (
           <div
-            key={uniqueKey}
+            key={item.id}
             className={`flex flex-col md:flex-row items-center justify-between gap-6 rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 ${
-              isChecked ? "border-orange-400 ring-1 ring-orange-400/10" : "border-gray-200"
+              isChecked ? "border-orange-400 ring-1 ring-orange-400/10" : "border-gray-200 opacity-75"
             }`}
           >
             <div className="flex items-center gap-4 w-full">
-              {/* Checkbox Icon Element */}
+              {/* Checkbox Trigger Button */}
               <button
                 type="button"
-                onClick={() => toggleSelection(uniqueKey)}
+                onClick={() => toggleSelection(item.id)}
                 className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center cursor-pointer transition-all shrink-0 ${
                   isChecked ? "bg-orange-500 border-orange-500 text-white" : "border-gray-300 bg-gray-50"
                 }`}
@@ -120,7 +145,7 @@ export default function CartItems({ onSelectionChange }) {
                     src={item.image || item.images || "/placeholder.jpeg"}
                     alt={item.name}
                     fill
-                    className="object-contain"
+                    className="object-contain p-1"
                   />
                 </div>
 

@@ -5,12 +5,8 @@ import { FaArrowRight } from "react-icons/fa";
 import { toast } from "react-toastify";
 import Image from "next/image";
 
-export default function CartDetails({
-  cartItems, // 🌟 This safely receives 'selectedCartBatch' from your parent page wrapper!
-  router,
-  activeStep,
-}) {
-  // 1. Calculations run EXCLUSIVELY on checked subset array items
+export default function CartDetails({ cartItems = [], router, activeStep }) {
+  // Calculations run strictly on selected items passed from parent wrapper
   const subtotal = cartItems.reduce(
     (acc, item) => acc + item.price * item.quantity,
     0
@@ -22,16 +18,13 @@ export default function CartDetails({
 
   const handleNext = () => {
     if (cartItems.length === 0) {
-      toast.error("Please pick at least one jersey to checkout!");
+      toast.error("Please pick at least one jersey to proceed to checkout!");
       return;
     }
 
-    // Backup selected batch array values to cache before shifting step index strings
     localStorage.setItem("pending_checkout_items", JSON.stringify(cartItems));
 
-    router.push("/carts?step=2", {
-      scroll: false,
-    });
+    router.push("/carts?step=2", { scroll: false });
   };
 
   return (
@@ -43,15 +36,14 @@ export default function CartDetails({
         </span>
       </h2>
 
-      {/* ================= LIVE SELECTED ITEMS DISPLAY FEED ================= */}
+      {/* Selected Items Display Feed */}
       {cartItems.length === 0 ? (
         <div className="py-6 text-center text-gray-400 text-xs font-medium">
-          No items selected for purchase.
+          No items selected for checkout.
         </div>
       ) : (
         <div className="divide-y divide-gray-50 max-h-[200px] overflow-y-auto pr-1 my-2">
           {cartItems.map((item) => {
-            // Robust fallback resolution matching your exact database columns layout parameters
             const resolvedImgSrc = item.image || item.images || "/placeholder.jpeg";
 
             return (
@@ -65,7 +57,7 @@ export default function CartDetails({
                     alt={item.name || "Jersey Selection"}
                     fill
                     className="object-contain p-1"
-                    unoptimized // Helps bypass Next.js image caching restrictions for local paths if needed
+                    unoptimized
                   />
                 </div>
                 <div className="flex-1 min-w-0 text-xs">
@@ -84,7 +76,7 @@ export default function CartDetails({
         </div>
       )}
 
-      {/* ================= PRICE METRICS BREAKDOWN PANEL ================= */}
+      {/* Dynamic Price Calculation Breakdown */}
       <div className="space-y-3.5 text-xs font-medium text-gray-500 pt-4 border-t border-gray-100">
         <div className="flex justify-between">
           <span>Selected Subtotal</span>
@@ -119,7 +111,7 @@ export default function CartDetails({
         </div>
       )}
 
-      {/* ================= STEP ACTION NAVIGATION BUTTON ================= */}
+      {/* Step Action Navigation Button */}
       {activeStep === 1 && (
         <button
           onClick={handleNext}
