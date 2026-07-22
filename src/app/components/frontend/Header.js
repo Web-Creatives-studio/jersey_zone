@@ -23,7 +23,7 @@ const fetcher = (url) => fetch(url).then((res) => res.json());
 export default function Header() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const { cart } = useCartStore();
+  //const { cart } = useCartStore();
   const router = useRouter();
 
   // 1. Get current authenticated user details from global context
@@ -32,6 +32,11 @@ export default function Header() {
   // 2. Real-Time Unread Notification Streaming (Only fetches if user is logged in)
   const { data: notifications = [] } = useSWR(
     user?.id ? `/api/notifications/user?userId=${user.id}` : null,
+    fetcher,
+    { refreshInterval: 5000 },
+  );
+  const { data:cart = [] } = useSWR(
+    user?.id ? `/api/carts/user?userId=${user.id}` : null,
     fetcher,
     { refreshInterval: 5000 },
   );
