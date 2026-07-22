@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { FiLoader, FiCheck, FiMapPin, FiCreditCard, FiAlertTriangle, FiShoppingBag as FiCartIcon } from "react-icons/fi";
 import { useAuth } from "../contexts/AuthContext";
 import useCartStore from "../stores/useCartStore";
@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 function CheckoutPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, loading } = useAuth();
   const { cart, addToCart } = useCartStore();
 
@@ -79,7 +80,8 @@ function CheckoutPageContent() {
   // Session Redirect Security Guard
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/auth?mode=signin&message=session_expired");
+      //router.push("/auth?mode=signin&message=session_expired");
+         router.push(`/auth?redirect=${encodeURIComponent(pathname)}`);
     }
   }, [user, loading, router]);
 

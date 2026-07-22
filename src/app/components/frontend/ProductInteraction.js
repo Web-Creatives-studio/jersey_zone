@@ -5,15 +5,18 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { FaMinus, FaPlus, FaShoppingCart } from "react-icons/fa";
 import { toast } from "react-toastify";
 import useCartStore from "../../stores/useCartStore";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function ProductInteraction({
   product,
   selectedSize,
   selectedColor,
+// Pass user object or session prop here
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+    const { user} = useAuth();
   const { addToCart } = useCartStore();
   const [quantity, setQuantity] = useState(1);
 
@@ -55,6 +58,31 @@ export default function ProductInteraction({
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
+  // Helper to safely extract variant image or primary product image
+  const getVariantImage = () => {
+    if (!product?.images) return "/placeholder.jpeg";
+    if (typeof product.images === "object" && product.images[selectedColor]) {
+      return product.images[selectedColor];
+    }
+    if (typeof product.images === "string") {
+      try {
+        const parsed = JSON.parse(product.images);
+        return parsed[selectedColor] || parsed.default || "/placeholder.jpeg";
+      } catch (e) {
+        return product.image || "/placeholder.jpeg";
+      }
+    }
+    return product.image || "/placeholder.jpeg";
+  };
+
+  // Helper to construct authentication redirect URL
+  const redirectToLogin = (actionName) => {
+    const currentFullUrl = `${pathname}?${searchParams.toString()}`;
+    toast.info(`Please sign in to ${actionName}.`);
+    router.push(`/auth?redirect=${encodeURIComponent(currentFullUrl)}`);
+  };
+
+  // 🛒 HANDLE ADD TO CART
   const handleAddToCart = () => {
     if (!selectedSize || !selectedColor) {
       toast.error("Please select a size and color variant configuration.");
@@ -66,29 +94,81 @@ export default function ProductInteraction({
       return;
     }
 
+    // 🔒 Auth Guard Check
+    if (!user) {
+      redirectToLogin("add items to your cart");
+      return;
+    }
+
     const newCartItemId =
       "c" +
       Math.random().toString(36).substring(2, 11) +
       Math.random().toString(36).substring(2, 11);
 
-    addToCart({
-      id: newCartItemId,
-      productId: product.id,
-      name: product.name,
-      price: product.price,
-      images: product.images,
-      quantity: quantity,
-      selectedSize,
-      selectedColor,
-    });
+    const variantImage = getVariantImage();
+
+    addToCart(
+      {
+        id: newCartItemId,
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        image: variantImage,
+        quantity: quantity,
+        selectedSize,
+        selectedColor,
+      },
+      user?.id || null,
+      user?.name || null
+    );
 
     toast.success(`${product.name} added to cart successfully!`);
   };
 
+  // ⚡ HANDLE BUY NOW
   const handleBuyNow = () => {
-    if (currentAvailableStock <= 0) return;
-    handleAddToCart();
-    router.push("/cart");
+    if (!selectedSize || !selectedColor) {
+      toast.error("Please select a size and color variant configuration.");
+      return;
+    }
+
+    if (currentAvailableStock <= 0) {
+      toast.error("This specific size and color variation is out of stock.");
+      return;
+    }
+
+    // 🔒 Auth Guard Check
+    if (!user) {
+      redirectToLogin("proceed with direct checkout");
+      return;
+    }
+
+    const newCartItemId =
+      "c" +
+      Math.random().toString(36).substring(2, 11) +
+      Math.random().toString(36).substring(2, 11);
+
+    const variantImage = getVariantImage();
+
+    const pendingCheckoutItem = {
+      id: newCartItemId,
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      image: variantImage,
+      quantity: quantity,
+      selectedSize,
+      selectedColor,
+    };
+
+    // Staged for direct instant checkout
+    localStorage.setItem(
+      "pending_checkout_items",
+      JSON.stringify([pendingCheckoutItem])
+    );
+
+    // Route directly to checkout
+    router.push(`/checkout`, { scroll: false });
   };
 
   return (
@@ -99,8 +179,14 @@ export default function ProductInteraction({
           <div className="flex justify-between items-center">
             <span className="font-semibold text-gray-700">Size</span>
             {selectedSize && (
-              <span className={`text-xs font-bold ${currentAvailableStock <= 5 ? "text-orange-600 animate-pulse" : "text-gray-400"}`}>
-                {currentAvailableStock <= 0 ? "Out of Stock" : `${currentAvailableStock} units remaining`}
+              <span
+                className={`text-xs font-bold ${
+                  currentAvailableStock <= 5 ? "text-orange-600 animate-pulse" : "text-gray-400"
+                }`}
+              >
+                {currentAvailableStock <= 0
+                  ? "Out of Stock"
+                  : `${currentAvailableStock} units remaining`}
               </span>
             )}
           </div>
@@ -120,8 +206,8 @@ export default function ProductInteraction({
                     isSizeOutOfStock
                       ? "opacity-40 bg-gray-100 border-gray-200 text-gray-400 line-through cursor-not-allowed"
                       : isSelected
-                        ? "border-black bg-black text-white shadow-sm cursor-pointer"
-                        : "border-gray-200 bg-white text-gray-800 hover:border-gray-400 cursor-pointer"
+                      ? "border-black bg-black text-white shadow-sm cursor-pointer"
+                      : "border-gray-200 bg-white text-gray-800 hover:border-gray-400 cursor-pointer"
                   }`}
                 >
                   {size.toUpperCase()}

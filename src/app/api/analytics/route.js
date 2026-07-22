@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "../../lib/prisma"; 
+import { prisma } from "../../lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -9,29 +9,18 @@ export async function GET() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(now.getDate() - 7);
 
-
+    // 1. Calculate Gross Revenue from non-cancelled orders
     const totalRevenueResult = await prisma.orders.aggregate({
       _sum: { totalAmount: true },
       where: {
-        status: { not: "Cancelled" }, 
+        status: { not: "Cancelled" },
       },
     });
+    const grossRevenue = Number(totalRevenueResult._sum.totalAmount || 0);
 
+    // 2. Order Status Counters
     const totalOrders = await prisma.orders.count();
-    
-    
-    const activeCarts = await prisma.carts.count({
-      where: { isOrdered: false },
-    });
 
-    const abandonedCarts = await prisma.carts.count({
-      where: {
-        isOrdered: false,
-        updatedAt: { lte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, 
-      },
-    });
-
-    
     const awaitingShipment = await prisma.orders.count({
       where: { status: "Shipped" },
     });
@@ -40,22 +29,55 @@ export async function GET() {
       where: { status: "Pending" },
     });
 
-    
-    const lowStockWarnings = await prisma.products.count({
-      where: { stock: { lte: 5 } },
+    // 3. Cart Session Tracking
+    const activeCarts = await prisma.carts.count({
+      where: { isOrdered: false },
     });
 
-    
-    const lowStockProductsList = await prisma.products.findMany({
-      where: { stock: { lte: 5 } },
-      select: { name: true, stock: true },
-      orderBy: { stock: "asc" },
-      take: 2,
+    const abandonedCarts = await prisma.carts.count({
+      where: {
+        isOrdered: false,
+        updatedAt: { lte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+      },
     });
 
-    const grossRevenue = Number(totalRevenueResult._sum.totalAmount || 0);
+    // 4. LOW STOCK WARNINGS PER COLOR & PER SIZE
+    const allProducts = await prisma.products.findMany({
+      select: { id: true, name: true, stock: true, sizes: true, price: true, category: true },
+    });
 
-  
+    const lowStockVariantsList = [];
+
+    allProducts.forEach((prod) => {
+      const parsedSizes =
+        typeof prod.sizes === "string" ? JSON.parse(prod.sizes) : prod.sizes || {};
+
+      // Parse nested colors and sizes (e.g., { "white": { "S": 2, "M": 10 } })
+      Object.keys(parsedSizes).forEach((colorKey) => {
+        const sizesMap = parsedSizes[colorKey];
+        if (typeof sizesMap === "object" && sizesMap !== null) {
+          Object.keys(sizesMap).forEach((sizeKey) => {
+            const variantStock = Number(sizesMap[sizeKey] || 0);
+
+            // Trigger warning when an individual color/size variant has 5 or fewer items left
+            if (variantStock <= 5) {
+              lowStockVariantsList.push({
+                id: prod.id,
+                name: prod.name,
+                color: colorKey,
+                size: sizeKey,
+                stock: variantStock,
+              });
+            }
+          });
+        }
+      });
+    });
+
+    // Sort low stock variants starting with lowest quantity left
+    lowStockVariantsList.sort((a, b) => a.stock - b.stock);
+
+    // 5. Build 7-Day Revenue Trend Chart Data
     const recentOrders = await prisma.orders.findMany({
       where: {
         createdAt: { gte: sevenDaysAgo },
@@ -69,7 +91,7 @@ export async function GET() {
 
     const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const trendMap = {};
-    
+
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(now.getDate() - i);
@@ -89,23 +111,15 @@ export async function GET() {
       revenue: trendMap[day],
     }));
 
-    const productsList = await prisma.products.findMany({
-      select: {
-        id: true,
-        category: true,
-      },
-    });
-
-    const categories = [...new Set(productsList.map((p) => p.category || "All"))];
-
-    
+    // 6. Build Category Conversion Analytics (Carts vs Purchased)
+    const categories = [
+      ...new Set(allProducts.map((p) => p.category || "General")),
+    ];
 
     const productCategoryMap = {};
-    productsList.forEach((p) => {
-      productCategoryMap[p.id] = p.category;
+    allProducts.forEach((p) => {
+      productCategoryMap[p.id] = p.category || "General";
     });
-
-    
 
     const allCarts = await prisma.carts.findMany({
       select: {
@@ -129,7 +143,7 @@ export async function GET() {
       };
     });
 
- 
+    // 7. BUILD TOP PRODUCTS LEADERBOARD
     const topProductsRaw = await prisma.carts.groupBy({
       by: ["name"],
       where: { isOrdered: true },
@@ -139,20 +153,18 @@ export async function GET() {
           quantity: "desc",
         },
       },
-      take: 3,
+      take: 5,
     });
 
     const topProducts = await Promise.all(
       topProductsRaw.map(async (item) => {
-        const prodDetails = await prisma.products.findFirst({
-          where: { name: item.name },
-          select: { stock: true, price: true },
-        });
+        const prodDetails = allProducts.find((p) => p.name === item.name);
 
         const sales = item._sum.quantity || 0;
         const price = prodDetails?.price || 0;
 
         return {
+          id: prodDetails?.id,
           name: item.name,
           sales,
           stock: prodDetails?.stock || 0,
@@ -163,21 +175,27 @@ export async function GET() {
 
     return NextResponse.json({
       stats: {
-        totalRevenue: `$${grossRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        totalRevenue: `$${grossRevenue.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
         activeCarts,
         abandonedCarts,
         totalOrders,
         awaitingShipment,
         processing,
-        lowStockWarnings,
+        lowStockWarnings: lowStockVariantsList.length,
       },
-      lowStockProducts: lowStockProductsList,
+      lowStockProducts: lowStockVariantsList.slice(0, 5), // Top 5 critical variants
       revenueTrend,
       conversionData,
       topProducts,
     });
   } catch (error) {
     console.error("Failed to build administrative analytics metrics pipeline:", error);
-    return NextResponse.json({ error: "Failed to extract database analytics" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to extract database analytics" },
+      { status: 500 }
+    );
   }
 }

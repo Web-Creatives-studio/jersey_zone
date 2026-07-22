@@ -8,7 +8,6 @@ import OrderTable from "../../components/admin/OrderTable";
 import FooterInteract from "../../components/admin/FooterInteract";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
-// Force dynamic execution for safe database/API query environments
 export const dynamic = "force-dynamic";
 
 const fetcher = (url) => fetch(url).then((res) => res.json());
@@ -29,7 +28,7 @@ function OrdersContent() {
   const itemsPerPage = 7;
 
   const {
-    data: orders = [],
+    data: rawOrders = [],
     error,
     isLoading,
     mutate,
@@ -38,7 +37,14 @@ function OrdersContent() {
     revalidateOnFocus: true,
   });
 
-  // 2. Centralized, reusable method to generate parameter strings safely
+  // Ensure orders is always an array regardless of API payload shape
+  const orders = Array.isArray(rawOrders)
+    ? rawOrders
+    : Array.isArray(rawOrders?.orders)
+    ? rawOrders.orders
+    : [];
+
+  // 2. Centralized URL Query String Generator
   const createQueryString = (name, value) => {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -48,9 +54,8 @@ function OrdersContent() {
       params.delete(name);
     }
 
-    // ONLY reset to page 1 if we are changing filters/search, NOT when selecting items!
     const isSelectingItem = name === "orderId" || name === "customerId" || name === "mailId";
-    
+
     if (name !== "page" && !isSelectingItem) {
       params.set("page", "1");
     }
@@ -59,6 +64,10 @@ function OrdersContent() {
   };
 
   const handleUrlParamChange = (name, value) => {
+    // Reset item sub-page when switching orders
+    if (name === "orderId") {
+      setItemPage(1);
+    }
     const queryString = createQueryString(name, value);
     router.push(`${pathname}?${queryString}`, { scroll: false });
   };
@@ -80,14 +89,14 @@ function OrdersContent() {
 
       mutate();
     } catch (error) {
-      console.error("Fulfillment update crash:", error);
+      console.error("Fulfillment update error:", error);
       alert("Error synchronizing fulfillment status change.");
     } finally {
       setUpdating(false);
     }
   };
 
-  // 3. Array filter maps driven entirely out of the URL parameter state
+  // 3. Category Filter
   const filteredOrders =
     category === "All"
       ? orders
@@ -188,7 +197,7 @@ function OrdersContent() {
       </div>
 
       {/* RIGHT COLUMN: DETAILED SNAPSHOT VIEW */}
-      <div className="order-1 xl:order-2 xl:col-span-1 rounded-xl shadow-lg border border-slate-100 bg-white p-4 sm:p-6 flex flex-col justify-between h-full border-t-4 border-t-[#111827] overflow-y-hidden">
+      <div className="order-1 xl:order-2 xl:col-span-1 rounded-xl shadow-lg border border-slate-100 bg-white p-4 sm:p-6 flex flex-col justify-between h-full border-t-4 border-t-[#111827] overflow-y-auto">
         {selectedOrder ? (
           <ShowOrder
             selectedOrder={selectedOrder}
@@ -199,7 +208,7 @@ function OrdersContent() {
             handleFulfillmentUpdate={handleFulfillmentUpdate}
           />
         ) : (
-          <div className="h-full min-h-50 flex items-center justify-center text-slate-400 text-sm font-medium">
+          <div className="h-full min-h-[200px] flex items-center justify-center text-slate-400 text-sm font-medium">
             Select an order to view live details snapshot
           </div>
         )}
@@ -208,7 +217,6 @@ function OrdersContent() {
   );
 }
 
-// 2. Extracted Loading Placeholder
 function LoadingPlaceholder() {
   return (
     <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-3 text-slate-400">
@@ -220,7 +228,6 @@ function LoadingPlaceholder() {
   );
 }
 
-// 🌟 3. Default export wrapped in Suspense boundary to protect Vercel production build compilation
 export default function Orders() {
   return (
     <Suspense fallback={<LoadingPlaceholder />}>

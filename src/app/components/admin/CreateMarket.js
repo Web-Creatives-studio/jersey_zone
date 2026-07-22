@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import { FaTimes } from "react-icons/fa";
 import { toast } from "react-toastify";
@@ -37,13 +38,18 @@ export default function CreateMarket({
     }
   };
 
+  // Helper function to append dynamic personalization tags into the HTML template area
+  const insertVariableTag = (tag) => {
+    setHtmlContent((prev) => `${prev}${prev ? " " : ""}${tag}`);
+  };
+
   const handleSavePipeline = async (e) => {
     e.preventDefault();
     setIsSaving(true);
 
     try {
       const payload = {
-        id: editingAutomation?.id, // Present only when editing an existing item
+        id: editingAutomation?.id, // Present only when editing an existing rule
         name,
         category,
         triggerType,
@@ -63,6 +69,9 @@ export default function CreateMarket({
       if (res.ok) {
         toast.success("Pipeline engine rule saved successfully!");
         setCreateMarket(false);
+      } else {
+        const errorData = await res.json();
+        toast.error(errorData.error || "Failed to save pipeline configuration.");
       }
     } catch (err) {
       toast.error("Pipeline transmission failed.");
@@ -74,13 +83,13 @@ export default function CreateMarket({
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40" />
-      {/* Drawer Container */}
 
+      {/* Drawer Container */}
       <form
         onSubmit={handleSavePipeline}
-        className="fixed top-0 right-0 h-screen w-full sm:w-[500px] bg-white shadow-2xl z-50 flex flex-col  max-w-2xl   p-6 space-y-5 text-slate-800"
+        className="fixed top-0 right-0 h-screen w-full sm:w-[500px] bg-white shadow-2xl z-50 flex flex-col max-w-2xl text-slate-800"
       >
-        <div className="flex justify-between items-center border-b pb-3">
+        <div className="flex justify-between items-center p-6 border-b">
           <h2 className="text-xl font-bold tracking-tight text-zinc-900">
             {editingAutomation
               ? "Modify Existing Automation Rule"
@@ -89,12 +98,13 @@ export default function CreateMarket({
           <button
             type="button"
             onClick={() => setCreateMarket(false)}
-            className="text-slate-400 hover:text-zinc-900 font-bold p-2"
+            className="text-slate-400 hover:text-zinc-900 font-bold p-2 transition"
           >
             <FaTimes />
           </button>
         </div>
-        <div className="overflow-y-auto h-screen">
+
+        <div className="overflow-y-auto flex-1 p-6 space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -148,7 +158,7 @@ export default function CreateMarket({
             </div>
 
             {triggerType === "DELAYED" && (
-              <div className="pt-2 animate-slideDown">
+              <div className="pt-2">
                 <label className="block text-xs font-medium text-slate-500">
                   Wait Duration (Hours after database interaction event)
                 </label>
@@ -156,14 +166,14 @@ export default function CreateMarket({
                   type="number"
                   min={1}
                   value={delayInHours}
-                  onChange={(e) => setDelayInHours(parseInt(e.target.value))}
+                  onChange={(e) => setDelayInHours(parseInt(e.target.value) || 0)}
                   className="mt-1 p-2 w-32 border border-slate-200 rounded-lg text-sm bg-white"
                 />
               </div>
             )}
 
             {triggerType === "SCHEDULED" && (
-              <div className="pt-2 animate-slideDown">
+              <div className="pt-2">
                 <label className="block text-xs font-medium text-slate-500">
                   Calendar Release Blueprint Timestamp
                 </label>
@@ -221,7 +231,7 @@ export default function CreateMarket({
             )}
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wide text-slate-400">
                 Outbound Email Subject Line
@@ -234,6 +244,33 @@ export default function CreateMarket({
                 required
               />
             </div>
+
+            {/* Dynamic Template Injector Pills */}
+            <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-400">
+                Insert Personalization Tags
+              </label>
+              <div className="flex gap-1.5 flex-wrap">
+                {[
+                  { label: "Name", tag: "{{name}}" },
+                  { label: "Order ID", tag: "{{orderId}}" },
+                  { label: "Total Amount", tag: "{{totalAmount}}" },
+                  { label: "Items List", tag: "{{itemsList}}" },
+                  { label: "Tracking Link", tag: "{{trackingLink}}" },
+                  { label: "Address", tag: "{{shippingAddress}}" },
+                ].map((item) => (
+                  <button
+                    key={item.tag}
+                    type="button"
+                    onClick={() => insertVariableTag(item.tag)}
+                    className="text-[11px] font-mono bg-white hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 border border-slate-200 px-2.5 py-1 rounded-md transition cursor-pointer font-medium"
+                  >
+                    + {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold uppercase tracking-wide text-slate-400">
                 Email Template Layout Structure Content (HTML String)
@@ -242,18 +279,19 @@ export default function CreateMarket({
                 rows={10}
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
-                className="w-full mt-1 p-2 border border-slate-200 rounded-lg font-mono text-xs bg-slate-50 focus:outline-none focus:border-orange-500"
-                placeholder="<div>Hello {{name}}, ...</div>"
+                className="w-full mt-1 p-3 border border-slate-200 rounded-lg font-mono text-xs bg-slate-50 focus:outline-none focus:border-orange-500 leading-relaxed"
+                placeholder="<div style='font-family: sans-serif;'>Hello {{name}}, your order #{{orderId}} is confirmed!</div>"
                 required
               />
             </div>
           </div>
         </div>
+
         <div className="border-t p-4 bg-gray-50 flex items-center justify-between">
           <button
             type="submit"
             disabled={isSaving}
-            className="w-full py-3 bg-orange-600 hover:bg-zinc-900 text-white font-bold rounded-xl shadow-md transition duration-200 text-sm tracking-wide"
+            className="w-full py-3 bg-orange-600 hover:bg-zinc-900 text-white font-bold rounded-xl shadow-md transition duration-200 text-sm tracking-wide disabled:opacity-50"
           >
             {isSaving
               ? "Saving Configuration..."

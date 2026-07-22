@@ -6,13 +6,14 @@ import { toast } from "react-toastify";
 import useCartStore from "../../stores/useCartStore";
 import { FaShoppingCart, FaMinus, FaPlus } from "react-icons/fa";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function ProductCard({ products }) {
   const router = useRouter();
-  
-  const { user, loading } = useAuth(); 
+  const pathname = usePathname();
+
+  const { user, loading } = useAuth();
   const [quantity, setQuantity] = useState(1);
 
   // 1. Establish default color fallback safely
@@ -52,20 +53,31 @@ export default function ProductCard({ products }) {
 
   const handleSizeChange = (newSize) => {
     setProductType((prev) => ({ ...prev, size: newSize }));
-    setQuantity(1); 
+    setQuantity(1);
   };
 
   const handleAddToCart = () => {
+    // 1. Stock Check
     if (currentAvailableStock <= 0) {
       toast.error("This specific size and color variation is out of stock.");
       return;
     }
 
-    const customerId = user?.id || null;
-    const customerName = user?.name || null;
-    const newCartItemId = "c" + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
+    // 2. Auth Guard: Redirect to Login (NOT Home Page)
+    if (!user) {
+      toast.info("Please sign in to add items to your cart.");
+      // Redirects to /login and returns back to this product page upon login
+      router.push(`/auth?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
 
-
+    // 3. Process Cart Addition
+    const customerId = user.id;
+    const customerName = user.name;
+    const newCartItemId =
+      "c" +
+      Math.random().toString(36).substring(2, 11) +
+      Math.random().toString(36).substring(2, 11);
 
     addToCart(
       {
@@ -82,8 +94,6 @@ export default function ProductCard({ products }) {
       customerName,
     );
 
-    console.log(products.images[productType.color])
-
     toast.success(`${products.name} added to cart successfully!`);
   };
 
@@ -93,9 +103,10 @@ export default function ProductCard({ products }) {
       return;
     }
 
-    const newCartItemId = "c" + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
-
-
+    const newCartItemId =
+      "c" +
+      Math.random().toString(36).substring(2, 11) +
+      Math.random().toString(36).substring(2, 11);
 
     // 🌟 THE FIX: Staged as a single-item array in "pending_checkout_items" to perfectly match CartDetails expectations
     const pendingCheckoutItem = {
@@ -109,7 +120,10 @@ export default function ProductCard({ products }) {
       selectedColor: productType.color,
     };
 
-    localStorage.setItem("pending_checkout_items", JSON.stringify([pendingCheckoutItem]));
+    localStorage.setItem(
+      "pending_checkout_items",
+      JSON.stringify([pendingCheckoutItem]),
+    );
 
     // Route dynamically to Step 2 (Shipping Address) of your unified carts page checkout sequence
     router.push(`/checkout`, { scroll: false });
@@ -195,7 +209,9 @@ export default function ProductCard({ products }) {
                     <button
                       type="button"
                       disabled={quantity <= 1}
-                      onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                      onClick={() =>
+                        setQuantity((prev) => Math.max(1, prev - 1))
+                      }
                       className="p-1 px-2 text-gray-600 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                     >
                       <FaMinus size={12} />
