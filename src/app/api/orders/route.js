@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../lib/prisma";
-import { Resend } from "resend";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +7,7 @@ export const dynamic = "force-dynamic";
 // GET: Fetch Orders (Smart Admin vs Buyer Router)
 // ==========================================
 export async function GET(request) {
-  const resend = new Resend();
+
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
