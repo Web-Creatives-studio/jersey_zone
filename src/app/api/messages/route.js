@@ -1,7 +1,7 @@
 // app/api/messages/route.js
 import { NextResponse } from "next/server";
 import { prisma } from "../../lib/prisma";
-import { sendTelegramAdminNotification } from "@/app/lib/telgram";
+import { sendTelegramAdminNotification } from "../../lib/telgram";
 
 // ==========================================
 // GET: Fetch message history & update read ticks
