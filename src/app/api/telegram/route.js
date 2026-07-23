@@ -15,7 +15,7 @@ export async function POST(req) {
     const productModel = prisma.products || prisma.product;
 
     // =========================================================================
-    // 1. HANDLE INLINE BUTTON ACTIONS (Mark Processing, Mark Shipped)
+    // 1. INLINE BUTTON CALLBACKS (Status Toggles)
     // =========================================================================
     if (body.callback_query) {
       const callback = body.callback_query;
@@ -30,9 +30,9 @@ export async function POST(req) {
           data: { status: "Processing" },
         });
 
-        await answerTelegramCallback(callbackId, "Order marked as Processing!");
+        await answerTelegramCallback(callbackId, "Marked as Processing!");
         await sendTelegramAdminNotification(
-          `✅ <b>Order #${orderId}</b> status changed to <b>Processing</b>.`
+          `⚙️ <b>Order #${orderId}</b> status updated to <b>Processing</b>.`
         );
       } else if (data.startsWith("ship_")) {
         const orderId = data.replace("ship_", "");
@@ -42,9 +42,21 @@ export async function POST(req) {
           data: { status: "Shipped" },
         });
 
-        await answerTelegramCallback(callbackId, "Order marked as Shipped!");
+        await answerTelegramCallback(callbackId, "Marked as Shipped!");
         await sendTelegramAdminNotification(
-          `🚚 <b>Order #${orderId}</b> status changed to <b>Shipped</b>.`
+          `🚚 <b>Order #${orderId}</b> status updated to <b>Shipped</b>.`
+        );
+      } else if (data.startsWith("deliv_")) {
+        const orderId = data.replace("deliv_", "");
+
+        await orderModel.update({
+          where: { id: orderId },
+          data: { status: "Delivered" },
+        });
+
+        await answerTelegramCallback(callbackId, "Marked as Delivered!");
+        await sendTelegramAdminNotification(
+          `✅ <b>Order #${orderId}</b> status updated to <b>Delivered</b>.`
         );
       }
 
@@ -52,7 +64,7 @@ export async function POST(req) {
     }
 
     // =========================================================================
-    // 2. HANDLE COMMAND MESSAGES (/orders, /stock, /help)
+    // 2. COMMAND & KEYBOARD MESSAGE HANDLER
     // =========================================================================
     const message = body.message;
     if (!message || !message.text) {
@@ -61,32 +73,79 @@ export async function POST(req) {
 
     const text = message.text.trim();
 
-    // Security check
+    // Security Check: Restrict to authorized admin chat ID
     if (
       String(message.chat.id) !== String(process.env.TELEGRAM_ADMIN_CHAT_ID)
     ) {
       return NextResponse.json({ error: "Unauthorized Chat" }, { status: 401 });
     }
 
-    // COMMAND: /orders
-    if (text === "/orders" || text === "/pending") {
+    // -------------------------------------------------------------------------
+    // COMMAND: /orders or Keyboard "📦 Pending Orders"
+    // -------------------------------------------------------------------------
+    if (
+      text === "/orders" ||
+      text === "/pending" ||
+      text === "📦 Pending Orders"
+    ) {
       const pendingOrders = await orderModel.findMany({
         where: { status: "Pending" },
         take: 5,
         orderBy: { createdAt: "desc" },
       });
 
-      if (pendingOrders.length === 0) {
+      if (!pendingOrders || pendingOrders.length === 0) {
         await sendTelegramAdminNotification("🎉 No pending orders right now!");
         return NextResponse.json({ ok: true });
       }
 
       for (const order of pendingOrders) {
+        // Parse JSON items
+        let itemsListText = "";
+        const rawItems = Array.isArray(order.items)
+          ? order.items
+          : typeof order.items === "string"
+          ? JSON.parse(order.items || "[]")
+          : [];
+
+        rawItems.forEach((item, idx) => {
+          const name = item.name || item.title || "Jersey";
+          const size = item.size ? ` (${item.size})` : "";
+          const color = item.color ? ` - ${item.color}` : "";
+          const qty = item.quantity || item.qty || 1;
+          const price = item.price ? ` @ $${Number(item.price).toFixed(2)}` : "";
+
+          itemsListText += `  ${idx + 1}. <b>${name}</b>${size}${color} x${qty}${price}\n`;
+        });
+
+        // Parse JSON Shipping Address
+        const addr =
+          typeof order.shippingAddress === "string"
+            ? JSON.parse(order.shippingAddress || "{}")
+            : order.shippingAddress || {};
+
+        const formattedAddress = [
+          addr.street || addr.address || addr.addressLine1,
+          addr.city,
+          addr.state,
+          addr.country,
+        ]
+          .filter(Boolean)
+          .join(", ") || "No address specified";
+
         const messageText =
-          `📦 <b>PENDING ORDER #${order.id}</b>\n` +
+          `📦 <b>PENDING ORDER DETAILS</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━\n` +
+          `🆔 <b>Order ID:</b> <code>#${order.id}</code>\n` +
           `👤 <b>Customer:</b> ${order.customerName || "Guest"}\n` +
-          `💵 <b>Total:</b> $${Number(order.totalAmount || 0).toFixed(2)}\n` +
-          `📅 <b>Date:</b> ${new Date(order.createdAt).toLocaleString()}`;
+          `✉️ <b>Email:</b> ${order.customerEmail || "N/A"}\n` +
+          `💳 <b>Payment Status:</b> ${order.paymentStatus || "Unpaid"}\n\n` +
+          `🛒 <b>Items Ordered:</b>\n${itemsListText || "  No items listed"}\n` +
+          `📍 <b>Shipping Address:</b>\n<i>${formattedAddress}</i>\n\n` +
+          `💰 <b>Subtotal:</b> $${Number(order.subtotal || 0).toFixed(2)}\n` +
+          `🚚 <b>Shipping:</b> $${Number(order.shipping || 0).toFixed(2)}\n` +
+          `💵 <b>Total Amount:</b> <b>$${Number(order.totalAmount || 0).toFixed(2)}</b>\n` +
+          `📅 <b>Date:</b> ${new Date(order.createdAt || order.date).toLocaleString()}`;
 
         const inlineKeyboard = {
           inline_keyboard: [
@@ -100,6 +159,12 @@ export async function POST(req) {
                 callback_data: `ship_${order.id}`,
               },
             ],
+            [
+              {
+                text: "✅ Mark Delivered",
+                callback_data: `deliv_${order.id}`,
+              },
+            ],
           ],
         };
 
@@ -107,41 +172,101 @@ export async function POST(req) {
       }
     }
 
-    // COMMAND: /stock
-    else if (text === "/stock") {
+    // -------------------------------------------------------------------------
+    // COMMAND: /stock or Keyboard "📊 Inventory Stock"
+    // -------------------------------------------------------------------------
+    else if (text === "/stock" || text === "📊 Inventory Stock") {
       const products = await productModel.findMany();
       let lowStockCount = 0;
-      let reportText = "📊 <b>INVENTORY & STOCK REPORT</b>\n\n";
+      let reportText = "📊 <b>INVENTORY & STOCK REPORT</b>\n━━━━━━━━━━━━━━━━━━━\n\n";
 
       products.forEach((prod) => {
-        const sizesMap = prod.sizes || {};
-        Object.keys(sizesMap).forEach((color) => {
-          Object.keys(sizesMap[color] || {}).forEach((size) => {
-            const stock = sizesMap[color][size];
-            if (stock <= 3) {
-              lowStockCount++;
-              reportText += `⚠️ <b>${prod.name}</b> (${color} / ${size.toUpperCase()}): <b>${stock} left</b>\n`;
+        // 1. Top-Level Stock Check
+        if (typeof prod.stock === "number" && prod.stock <= 3) {
+          lowStockCount++;
+          reportText += `⚠️ <b>${prod.name}</b>: Total stock is <b>${prod.stock} unit(s) left</b>\n`;
+        }
+
+        // 2. Nested Variant Sizes Check
+        if (prod.sizes) {
+          try {
+            const sizesMap =
+              typeof prod.sizes === "string"
+                ? JSON.parse(prod.sizes)
+                : prod.sizes;
+
+            if (typeof sizesMap === "object" && sizesMap !== null) {
+              Object.keys(sizesMap).forEach((key) => {
+                const val = sizesMap[key];
+                if (typeof val === "number" && val <= 3) {
+                  lowStockCount++;
+                  reportText += `⚠️ <b>${prod.name}</b> (${key.toUpperCase()}): <b>${val} left</b>\n`;
+                } else if (typeof val === "object" && val !== null) {
+                  Object.keys(val).forEach((size) => {
+                    const count = val[size];
+                    if (typeof count === "number" && count <= 3) {
+                      lowStockCount++;
+                      reportText += `⚠️ <b>${prod.name}</b> (${key} / ${size.toUpperCase()}): <b>${count} left</b>\n`;
+                    }
+                  });
+                }
+              });
             }
-          });
-        });
+          } catch (e) {
+            // Safe JSON parse fallback
+          }
+        }
       });
 
       if (lowStockCount === 0) {
-        reportText += "✅ All product variant stocks are healthy (> 3 units).";
+        reportText += "✅ All product inventory stocks are healthy (> 3 units).";
       }
 
       await sendTelegramAdminNotification(reportText);
     }
 
-    // DEFAULT COMMAND LIST
-    else if (text === "/start" || text === "/help") {
-      const helpText =
-        `🤖 <b>JERSEY ZONE ADMIN BOT</b>\n\n` +
-        `Available Commands:\n` +
-        `• /orders - View pending orders & mark as processing/shipped\n` +
-        `• /stock - View low inventory stock warnings`;
+    // -------------------------------------------------------------------------
+    // COMMAND: /stats or Keyboard "📈 Revenue Stats"
+    // -------------------------------------------------------------------------
+    else if (text === "/stats" || text === "📈 Revenue Stats") {
+      const allOrders = await orderModel.findMany();
+      const pendingCount = allOrders.filter((o) => o.status === "Pending").length;
 
-      await sendTelegramAdminNotification(helpText);
+      let totalRevenue = 0;
+      allOrders.forEach((o) => {
+        totalRevenue += Number(o.totalAmount || 0);
+      });
+
+      const statsText =
+        `📈 <b>STORE ANALYTICS OVERVIEW</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━\n` +
+        `📦 <b>Total Orders:</b> ${allOrders.length}\n` +
+        `⏳ <b>Pending Orders:</b> ${pendingCount}\n` +
+        `💵 <b>Gross Revenue:</b> $${totalRevenue.toFixed(2)}`;
+
+      await sendTelegramAdminNotification(statsText);
+    }
+
+    // -------------------------------------------------------------------------
+    // COMMAND: /start or /help (Interactive Reply Keyboard)
+    // -------------------------------------------------------------------------
+    else if (text === "/start" || text === "/help") {
+      const startText =
+        `🤖 <b>JERSEY ZONE ADMIN BOT LIVE</b>\n\n` +
+        `Select an action below or type slash commands:\n` +
+        `• /orders - View detailed pending orders & status buttons\n` +
+        `• /stock - Low stock inventory alerts\n` +
+        `• /stats - Total store revenue & order metrics`;
+
+      const replyKeyboard = {
+        keyboard: [
+          [{ text: "📦 Pending Orders" }, { text: "📊 Inventory Stock" }],
+          [{ text: "📈 Revenue Stats" }],
+        ],
+        resize_keyboard: true,
+      };
+
+      await sendTelegramAdminNotification(startText, replyKeyboard);
     }
 
     return NextResponse.json({ ok: true });
