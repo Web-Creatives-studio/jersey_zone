@@ -69,7 +69,7 @@ export async function POST(req) {
 
     // COMMAND: /orders (List Pending Orders)
     if (text === "/orders" || text === "/pending") {
-      const pendingOrders = await prisma.order.findMany({
+      const pendingOrders = await prisma.orders.findMany({
         where: { status: "PENDING" },
         take: 5,
         orderBy: { createdAt: "desc" },
@@ -108,7 +108,7 @@ export async function POST(req) {
 
     // COMMAND: /stock (Check Inventory & Low Stock Variants)
     else if (text === "/stock") {
-      const products = await prisma.product.findMany();
+      const products = await prisma.products.findMany();
       let lowStockCount = 0;
       let reportText = "📊 <b>INVENTORY & STOCK REPORT</b>\n\n";
 
