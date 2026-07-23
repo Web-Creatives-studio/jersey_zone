@@ -1,6 +1,7 @@
 // app/api/messages/route.js
 import { NextResponse } from "next/server";
 import { prisma } from "../../lib/prisma";
+import { sendTelegramAdminNotification } from "@/app/lib/telgram";
 
 // ==========================================
 // GET: Fetch message history & update read ticks
@@ -9,12 +10,12 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const customerId = searchParams.get("customerId");
-    const viewer = searchParams.get("viewer"); 
+    const viewer = searchParams.get("viewer");
 
     if (!customerId || !viewer) {
       return NextResponse.json(
-        { message: "Missing required query parameters: customerId or viewer" }, 
-        { status: 400 }
+        { message: "Missing required query parameters: customerId or viewer" },
+        { status: 400 },
       );
     }
 
@@ -39,7 +40,10 @@ export async function GET(request) {
     return NextResponse.json(Array.isArray(conversation) ? conversation : []);
   } catch (error) {
     console.error("Exception in GET /api/messages:", error);
-    return NextResponse.json({ message: "Database reading exception thrown" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Database reading exception thrown" },
+      { status: 500 },
+    );
   }
 }
 
@@ -51,19 +55,22 @@ export async function POST(request) {
     let { customerId, customerName, sender, text } = await request.json();
 
     if (!customerId || !sender || !text) {
-      return NextResponse.json({ message: "Missing required payload parameters" }, { status: 400 });
+      return NextResponse.json(
+        { message: "Missing required payload parameters" },
+        { status: 400 },
+      );
     }
 
     // 🌟 ENHANCED SECURITY LOOKUP: Clean up name discrepancies
     if (sender === "ADMIN") {
       // Look back for any message sent on this customerId thread to inherit their true name identifier
       const distinctThreadIdentity = await prisma.messages.findFirst({
-        where: { 
+        where: {
           customerId: customerId,
-          NOT: { customerName: "Guest Buyer" } // Don't inherit the placeholder generic string
+          NOT: { customerName: "Guest Buyer" }, // Don't inherit the placeholder generic string
         },
         orderBy: { createdAt: "desc" },
-        select: { customerName: true }
+        select: { customerName: true },
       });
 
       if (distinctThreadIdentity?.customerName) {
@@ -72,27 +79,48 @@ export async function POST(request) {
         // Look up against the main secure user profile credentials table if no chat history exists yet
         const activeProfileRecord = await prisma.user.findUnique({
           where: { id: customerId },
-          select: { name: true }
+          select: { name: true },
         });
         customerName = activeProfileRecord?.name || "Authenticated Client";
       }
     }
 
-    // Single source commit to prevent multi-insertion collisions 
+    // Single source commit to prevent multi-insertion collisions
     const archivedMessage = await prisma.messages.create({
-      data: { 
-        customerId, 
-        customerName: customerName || "Guest Buyer", 
-        sender, 
+      data: {
+        customerId,
+        customerName: customerName || "Guest Buyer",
+        sender,
         text,
-        read: false 
+        read: false,
       },
     });
+
+    const chatAlertText =
+      `💬 <b>NEW LIVE CHAT INQUIRY</b>\n\n` +
+      `👤 <b>Buyer Name:</b> ${buyerName || "Guest User"}\n` +
+      `✉️ <b>Message:</b> "${messageContent}"`;
+
+    const chatButtons = {
+      inline_keyboard: [
+        [
+          {
+            text: "💬 Reply in Admin Dashboard",
+            url: `https://jerseyzone.com/admin/chat?sessionId=${sessionId}`,
+          },
+        ],
+      ],
+    };
+
+    await sendTelegramAdminNotification(chatAlertText, chatButtons);
 
     return NextResponse.json(archivedMessage, { status: 201 });
   } catch (error) {
     console.error("Exception in POST /api/messages:", error);
-    return NextResponse.json({ message: "Failed to persist chat message" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Failed to persist chat message" },
+      { status: 500 },
+    );
   }
 }
 
@@ -104,7 +132,10 @@ export async function PUT(request) {
     const { customerId, viewer } = await request.json();
 
     if (!customerId || !viewer) {
-      return NextResponse.json({ message: "Missing payload data parameters" }, { status: 400 });
+      return NextResponse.json(
+        { message: "Missing payload data parameters" },
+        { status: 400 },
+      );
     }
 
     const targetSender = viewer === "ADMIN" ? "CUSTOMER" : "ADMIN";
@@ -120,9 +151,15 @@ export async function PUT(request) {
       },
     });
 
-    return NextResponse.json({ success: true, message: "Messages successfully marked as read" });
+    return NextResponse.json({
+      success: true,
+      message: "Messages successfully marked as read",
+    });
   } catch (error) {
     console.error("Exception in PUT /api/messages:", error);
-    return NextResponse.json({ message: "Failed updating message read attributes" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Failed updating message read attributes" },
+      { status: 500 },
+    );
   }
 }

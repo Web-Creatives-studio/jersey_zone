@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../lib/prisma";
+import { sendTelegramAdminNotification } from "../../lib/telgram";
+
+// Inside your POST handler after creating the order:
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +10,6 @@ export const dynamic = "force-dynamic";
 // GET: Fetch Orders (Smart Admin vs Buyer Router)
 // ==========================================
 export async function GET(request) {
-
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
@@ -183,6 +185,28 @@ export async function POST(request) {
           },
         });
 
+        // 1. Trigger Telegram Push Notification
+        const adminAlertMessage =
+          `🚨 <b>NEW ORDER RECEIVED!</b>\n\n` +
+          `🆔 <b>Order ID:</b> #${newOrder.id}\n` +
+          `👤 <b>Customer Name:</b> ${customerName}\n` +
+          `👕 <b>Items Summary:</b>\n${formattedItemsList}\n` +
+          `💵 <b>Total Paid:</b> $${Number(totalAmount).toFixed(2)}\n` +
+          `📍 <b>Shipping Address:</b> ${formattedAddress}`;
+
+        const actionButtons = {
+          inline_keyboard: [
+            [
+              {
+                text: "⚙️ Mark Processed",
+                callback_data: `proc_${newOrder.id}`,
+              },
+              { text: "🚚 Mark Shipped", callback_data: `ship_${newOrder.id}` },
+            ],
+          ],
+        };
+
+        await sendTelegramAdminNotification(adminAlertMessage, actionButtons);
         return createdOrder;
       },
 
