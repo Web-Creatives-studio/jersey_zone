@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import {
   sendTelegramAdminNotification,
   answerTelegramCallback,
-} from "../../lib/telegram";
+} from "../../lib/telgram";
 
 export const dynamic = "force-dynamic";
 
