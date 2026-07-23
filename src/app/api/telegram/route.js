@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import {
   sendTelegramAdminNotification,
   answerTelegramCallback,
-} from "../../lib/telgram";
+} from "../../lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -11,39 +11,40 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
+    const orderModel = prisma.orders || prisma.order;
+    const productModel = prisma.products || prisma.product;
+
     // =========================================================================
-    // 1. HANDLE INLINE BUTTON ACTIONS (Mark Processed, Mark Shipped, etc.)
+    // 1. HANDLE INLINE BUTTON ACTIONS (Mark Processing, Mark Shipped)
     // =========================================================================
     if (body.callback_query) {
       const callback = body.callback_query;
-      const data = callback.data; // e.g. "proc_ORD-12345" or "ship_ORD-12345"
+      const data = callback.data;
       const callbackId = callback.id;
 
       if (data.startsWith("proc_")) {
         const orderId = data.replace("proc_", "");
 
-        // Update database status
-        await prisma.orders.update({
+        await orderModel.update({
           where: { id: orderId },
-          data: { status: "processed" },
+          data: { status: "Processing" },
         });
 
-        await answerTelegramCallback(callbackId, "Order marked as PROCESSED!");
+        await answerTelegramCallback(callbackId, "Order marked as Processing!");
         await sendTelegramAdminNotification(
-          `✅ <b>Order #${orderId}</b> status changed to <b>PROCESSED</b>.`,
+          `✅ <b>Order #${orderId}</b> status changed to <b>Processing</b>.`
         );
       } else if (data.startsWith("ship_")) {
         const orderId = data.replace("ship_", "");
 
-        // Update database status
-        await prisma.order.update({
+        await orderModel.update({
           where: { id: orderId },
-          data: { status: "shipped" },
+          data: { status: "Shipped" },
         });
 
-        await answerTelegramCallback(callbackId, "Order marked as SHIPPED!");
+        await answerTelegramCallback(callbackId, "Order marked as Shipped!");
         await sendTelegramAdminNotification(
-          `🚚 <b>Order #${orderId}</b> status changed to <b>SHIPPED</b>.`,
+          `🚚 <b>Order #${orderId}</b> status changed to <b>Shipped</b>.`
         );
       }
 
@@ -60,17 +61,17 @@ export async function POST(req) {
 
     const text = message.text.trim();
 
-    // Security Guard: Verify request comes from your Telegram Chat ID
+    // Security check
     if (
       String(message.chat.id) !== String(process.env.TELEGRAM_ADMIN_CHAT_ID)
     ) {
       return NextResponse.json({ error: "Unauthorized Chat" }, { status: 401 });
     }
 
-    // COMMAND: /orders (List Pending Orders)
+    // COMMAND: /orders
     if (text === "/orders" || text === "/pending") {
-      const pendingOrders = await prisma.orders.findMany({
-        where: { status: "pending" },
+      const pendingOrders = await orderModel.findMany({
+        where: { status: "Pending" },
         take: 5,
         orderBy: { createdAt: "desc" },
       });
@@ -91,7 +92,7 @@ export async function POST(req) {
           inline_keyboard: [
             [
               {
-                text: "⚙️ Mark Processed",
+                text: "⚙️ Mark Processing",
                 callback_data: `proc_${order.id}`,
               },
               {
@@ -106,14 +107,13 @@ export async function POST(req) {
       }
     }
 
-    // COMMAND: /stock (Check Inventory & Low Stock Variants)
+    // COMMAND: /stock
     else if (text === "/stock") {
-      const products = await prisma.products.findMany();
+      const products = await productModel.findMany();
       let lowStockCount = 0;
       let reportText = "📊 <b>INVENTORY & STOCK REPORT</b>\n\n";
 
       products.forEach((prod) => {
-        // Parse variant stock json structure if exists
         const sizesMap = prod.sizes || {};
         Object.keys(sizesMap).forEach((color) => {
           Object.keys(sizesMap[color] || {}).forEach((size) => {
@@ -138,7 +138,7 @@ export async function POST(req) {
       const helpText =
         `🤖 <b>JERSEY ZONE ADMIN BOT</b>\n\n` +
         `Available Commands:\n` +
-        `• /orders - View pending orders & mark as processed/shipped\n` +
+        `• /orders - View pending orders & mark as processing/shipped\n` +
         `• /stock - View low inventory stock warnings`;
 
       await sendTelegramAdminNotification(helpText);
