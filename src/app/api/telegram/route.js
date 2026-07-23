@@ -23,9 +23,9 @@ export async function POST(req) {
         const orderId = data.replace("proc_", "");
 
         // Update database status
-        await prisma.order.update({
+        await prisma.orders.update({
           where: { id: orderId },
-          data: { status: "PROCESSED" },
+          data: { status: "processed" },
         });
 
         await answerTelegramCallback(callbackId, "Order marked as PROCESSED!");
@@ -38,7 +38,7 @@ export async function POST(req) {
         // Update database status
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: "SHIPPED" },
+          data: { status: "shipped" },
         });
 
         await answerTelegramCallback(callbackId, "Order marked as SHIPPED!");
@@ -70,7 +70,7 @@ export async function POST(req) {
     // COMMAND: /orders (List Pending Orders)
     if (text === "/orders" || text === "/pending") {
       const pendingOrders = await prisma.orders.findMany({
-        where: { status: "PENDING" },
+        where: { status: "pending" },
         take: 5,
         orderBy: { createdAt: "desc" },
       });
